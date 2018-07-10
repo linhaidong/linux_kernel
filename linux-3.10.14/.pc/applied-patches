@@ -1,0 +1,17 @@
+generic/930-crashlog.patch
+generic/931-tcp-input.patch
+platform/0201-firmware-size.patch
+platform/0220_reset_button.patch
+platform/0230-spi-size.patch
+platform/0231-fangshuaji.patch
+platform/0233-port5.patch
+platform/0301-ramips-profile.patch
+platform/0302-rt-timer.patch
+platform/0305-sdk4.3.0.5_20141205_MT7621_HW_NAT.patch
+platform/0306-sdk4.3.0.10_20150209_6RD_issue.patch
+platform/0307-to-115775-nand-error.patch
+platform/0309-reset-button.patch
+platform/0310-dhcp.patch
+platform/0311-raeth-netlink.patch
+platform/0311-skip-sd-read-only.patch
+platform/0312-adjust-init-kill-queue.patch

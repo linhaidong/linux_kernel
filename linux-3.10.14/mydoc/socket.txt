@@ -1,0 +1,99 @@
+socket返回的文件套接字，作为这用户空间和内核空间交互的桥梁．
+对用户，　抽先为标准的文件系统操作的描述符．
+对内核，　注册到内核协议的hash表中
+         接收数据：当有数据到来时，内核将数据写打socket的缓冲区中．
+         发送数据：
+问题:
+网络文件系统：
+缓冲区建立过程：
+socket插入内核hash表：
+hash插入和查找：
+
+
+
+网络文件系统：
+sock_init
+register_filesystem(&sock_fs_type);
+kern_mount(&sock_fs_type);
+
+
+
+缓冲区建立:
+inet_create()调用sock_init_data
+
+添加到缓冲区:sock_queue_rcv_skb
+
+hash插入和查找
+根据port得到hash head, 判断长度，如果大于10以ip+port为原始数据，从hash2中查找
+
+
+
+
+多进程共享socket
+    +------------+               +-----+
+    | 子进程1 fd1 | <-----------> |     |
+    +------------+               |     |
+                                 |     |
+    +------------+               |     |           +----------+
+    | 子进程2 fd1 | <-----------> | vfs | <-------> | socket 1 |
+    +------------+               |     |           +----------+
+                                 |     |
+    +------------+               |     |
+    | 子进程n fd1 | <-----------> |     |
+    +------------+               +-----+
+
+ 
+上面说过这种模型不管有多少子进程内核始终只有一个socket实例，那没什么好说的内核直接把报文放到该socket的收包队列。可是接下来的问题来了，内核该唤醒哪个进程呢？
+这种场景下，epoll会把所有添加了事件的socket对应的进程唤醒，至于谁能拿到数据就看谁的手快了，这就是传说中的“惊群”。
+解决惊群一种方式是通过用户态锁来控制事件的添加从而控制被唤醒的进程，另一种方式是linux 4.5内核增加了EPOLLEXCLUSIVE选项，对惊群问题进行优化。
+
+独享队列模型
+
+ 
+如何让多个进程服务同一个端口。排除上面的使用父进程listen再fork子进程的方案，大概还有两种方案。
+曲线救国：早些年有些服务让每个进程listen不同的端口，然后使用iptables或者负载均衡统一对外提供一个端口的服务，本质与单进程没区别这里不讨论。
+真正实现让多个进程listen同一个端口是linux内核3.9版本中加入了SO_REUSEPORT选项，下面我们就以UDP为例详细分析下SO_REUSEPORT的工作原理。
+ 
+
+    +------------+         +-----+           +----------+
+    | 子进程1 fd1 | <-----> |     | <-------> | socket 1 | ---+    +---------------+
+    +------------+         |     |           +----------+    |    | (reuse array) |
+                           |     |                           |    |               |
+    +------------+         |     |           +----------+    |    |    socket 1   |
+    | 子进程2 fd1 | <-----> | vfs | <-------> | socket 2 | ---+--> |    socket 2   |
+    +------------+         |     |           +----------+    |    |      ...      |
+                           |     |                           |    |    socket n   |
+    +------------+         |     |           +----------+    |    |               |
+    | 子进程n fd1 | <-----> |     | <-------> | socket n | ---+    +---------------+
+    +------------+         +-----+           +----------+
+
+ 
+ 这种场景中相当于所有listen同一个端口的进程是一个组合，内核收包时不管查找到哪个socket，都能映射到他们所属的 reuseport 数组，
+再通过五元组哈希选择一个socket，这样只有这个socket队列里有数据，所以即便所有的进程都添加了epoll事件，也只有一个进程会被唤醒。
+
+socket 查找原理
+根据绑定端口、接口等信息对socket进行评分，匹配度越高评分越高，永远将新来的报文分配给评分最高的socket
+当多个socket的评分相同并且均为最高评分时：
+当全部没有设置SO_REUSEPORT时，因为最后bind的socket在哈希表更靠前的位置，所以永远是最后bind的socket能够收到数据
+全部设置SO_REUSEPORT时，虽然也会先查到最后bind的socket，但会根据五元组进行哈希在reuseport数组中进行选择，选择方式类似哈希取余作为数组下标。
+当部分设置SO_REUSEPORT时：
+Ipv4由于最后bind的socket插到链表的头部，所以将会先被遍历到：
+如果最后bind的socket设置了SO_REUSEPORT，则在所有设置和没设置SO_REUSEPORT的socket中随机选择一个
+如果最后bind的socket没设置SO_REUSEPORT，则命中最后bind的这个socket
+Ipv6由于将设置SO_REUSEPORT的socket插到链表的尾部，所有先遍历到的一定是没有设置SO_REUSEPORT，则命中最后一个bind并且没有设置SO_REUSEPORT的socket
+
+发散：
+长链接升级链接不断开
+
+[参考文档]
+udp socket的实现
+https://blog.csdn.net/qy532846454/article/details/6942667
+https://blog.csdn.net/wukui1008/article/details/7616700
+https://blog.csdn.net/qy532846454/article/details/6993695
+文件系统
+https://blog.csdn.net/u014211079/article/details/45054587
+数据包接收流程
+https://blog.csdn.net/cupidove/article/details/42002923
+epoll经群
+http://www.cnblogs.com/sduzh/p/6810469.html
+

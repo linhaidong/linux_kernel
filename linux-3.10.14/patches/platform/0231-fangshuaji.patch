@@ -1,0 +1,14 @@
+Index: linux-3.10.14-p112871/drivers/mtd/mtdpart.c
+===================================================================
+--- linux-3.10.14-p112871.orig/drivers/mtd/mtdpart.c
++++ linux-3.10.14-p112871/drivers/mtd/mtdpart.c
+@@ -889,7 +889,8 @@ static void split_rootfs_data(struct mtd
+ 			    split_size, false);
+ }
+ 
+-#define UBOOT_MAGIC	0x27051956
++//#define UBOOT_MAGIC	0x27051956
++#define UBOOT_MAGIC	0x20141025
+ 
+ static void split_uimage(struct mtd_info *master, struct mtd_part *part)
+ {

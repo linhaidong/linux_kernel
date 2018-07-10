@@ -1,0 +1,2 @@
+kernel/drivers/char/ralink_gdma.ko
+kernel/drivers/char/spi_drv.ko

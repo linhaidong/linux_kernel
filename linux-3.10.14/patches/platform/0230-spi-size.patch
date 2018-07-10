@@ -1,0 +1,13 @@
+Index: linux-3.10.14/drivers/mtd/ralink/ralink_spi.c
+===================================================================
+--- linux-3.10.14.orig/drivers/mtd/ralink/ralink_spi.c
++++ linux-3.10.14/drivers/mtd/ralink/ralink_spi.c
+@@ -60,7 +60,7 @@ static struct mtd_partition rt2880_parti
+             offset:         MTDPART_OFS_APPEND
+      }, {
+             name:           "firmware",
+-            size:           MTDPART_SIZ_FULL,
++            size:           0x1000000 - 0x50000,
+             offset:         MTDPART_OFS_APPEND,
+      }
+ };

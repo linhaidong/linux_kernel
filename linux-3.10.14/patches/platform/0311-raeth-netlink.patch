@@ -1,0 +1,393 @@
+Index: linux-3.10.14/drivers/raeth/csr_netlink.h
+==================================================================
+--- linux.3.10.14.orig/drivers/net/raeth/csr_netlink.h	
++++ linux.3.10.4/drivers/net/raeth/csr_netlink.h
+@@ -5,17 +5,20 @@
+ #define	CSR_READ	0
+ #define	CSR_WRITE	1
+ #define	CSR_TEST	2
+-
++#define CSR_PORT0   3
++#define CSR_PORT1   4
++#define CSR_PORT2   5
++#define CSR_PORT3   6
++#define CSR_PORT4   7
++#define CSR_PORT5   8
+ #define RALINK_CSR_GROUP	 2882	
+-
++#define RALINK_NETLINK       29
+ typedef struct rt2880_csr_msg {
+   	int	enable;
+-  	char	reg_name[32];
+   	unsigned long address;
+   	unsigned long default_value;
+-  	unsigned long reserved_bits;	/* 1 : not reserved, 0 : reserved */
+-  	unsigned long write_mask;
+-  	unsigned long write_value;
++  	unsigned long rx_bytes;
++  	unsigned long tx_bytes;
+   	int	status;
+ } CSR_MSG;
+ 
+Index: linux.3.10.4/drivers/net/raeth/Kconfig	
+==================================================================
+--- linux.3.10.14.orig/drivers/net/raeth/Kconfig	
++++ linux.3.10.4/drivers/net/raeth/Kconfig	
+@@ -340,3 +340,8 @@
+ config 100PHY
+ bool
+ default y if GE1_MII_AN || GE2_MII_AN
++
++config RAETH_NETLINK
++        bool "Choose reath netlink "
++	default y
++        depends on RAETH && RALINK_MT7620
+Index: linux.3.10.4/drivers/net/raeth/ra_netlink.c
+==================================================================
+--- linux.3.10.14.orig/drivers/net/raeth/ra_netlink.c
++++ linux.3.10.4/drivers/net/raeth/ra_netlink.c
+@@ -10,133 +10,152 @@
+ #include "csr_netlink.h"
+ #include "ra2882ethreg.h"
+ #include "ra_netlink.h"
+-
++#include "ra_mac.h"
+ static struct sock *csr_msg_socket = NULL; // synchronize socket for netlink use
+ unsigned int flags;
+ 
+-void rt2880_csr_receiver(struct sock *sk, int len)
++void rt2880_csr_receiver(struct sk_buff *skb)
+ {
+-	struct sk_buff *skb;
+-	int err;
+-	struct nlmsghdr *nlh;
+-	unsigned int reg_value = 0;
+-	CSR_MSG *csrmsg;
+-	RAETH_PRINT("csr netlink receiver!\n");
+-	skb = skb_recv_datagram(sk, 0, 1, &err);
+-
+-	RAETH_PRINT("error no : %d\n", err);
+-	
+-	if (skb == NULL) {
+-		printk("rt2880_csr_receiver(): No data received, error!\n");
+-		return;
+-	}
+-	
+-	nlh = (struct nlmsghdr*)skb->data;
+-	
+-	csrmsg = NLMSG_DATA(nlh);
+-
+-	if (csrmsg->enable == CSR_READ ) {
+-		reg_value = sysRegRead(csrmsg->address);
+-#if 0
+-		printk("raeth -- 0x%08x: 0x%08x\n", csrmsg->address, reg_value);
++    int err;
++    struct nlmsghdr *nlh;
++    int pid;
++    unsigned int reg_value = 0;
++    CSR_MSG *csrmsg;
++    RAETH_PRINT("csr netlink receiver!\n");
++    if (skb == NULL) 
++    {
++        printk("rt2880_csr_receiver(): No data received, error!\n");
++        return;
++    }
++
++    nlh = (struct nlmsghdr*)skb->data;
++    pid = nlh->nlmsg_pid;
++    csrmsg = NLMSG_DATA(nlh);
++    switch(csrmsg->enable)
++    {
++        case CSR_READ:
++            reg_value = sysRegRead(csrmsg->address);
++            break;
++        case CSR_WRITE:
++            sysRegWrite(csrmsg->address, csrmsg->default_value);
++            reg_value = sysRegRead(csrmsg->address);
++            break;
++        case CSR_TEST:
++            reg_value = sysRegRead(csrmsg->address);
++            break;
++#if defined CONFIG_RALINK_MT7620
++        case CSR_PORT0:
++            csrmsg->rx_bytes = read_port(0,1);
++            csrmsg->tx_bytes = read_port(0,0);
++            reg_value = 11;
++            break;
++        case CSR_PORT1:
++            csrmsg->rx_bytes = read_port(1,1);
++            csrmsg->rx_bytes = read_port(1,0);
++            reg_value = 11;
++            break;
++        case CSR_PORT2:
++            csrmsg->rx_bytes =  read_port(2,1);
++            csrmsg->tx_bytes =  read_port(2,0);
++            reg_value = 11;
++            break;
++        case CSR_PORT3:
++            csrmsg->rx_bytes =  read_port(3,1);
++            csrmsg->tx_bytes =  read_port(3,0);
++            reg_value = 11;
++            break;
++        case CSR_PORT4:
++            csrmsg->rx_bytes =  read_port(4,1);
++            csrmsg->tx_bytes =  read_port(4,0);
++            reg_value = 11;
++            break;
++        case CSR_PORT5:
++            csrmsg->rx_bytes =  read_port(5,1);
++            csrmsg->tx_bytes =  read_port(5,0);
++            reg_value = 11;
++            break;
+ #endif
+-	} else if ( csrmsg->enable == CSR_WRITE ) {
+-		sysRegWrite(csrmsg->address, csrmsg->default_value);
+-		reg_value = sysRegRead(csrmsg->address);
+-	} else if ( csrmsg->enable == CSR_TEST ) {
+-		reg_value = sysRegRead(csrmsg->address);
+-		printk("0x%08x: 0x%08x\n", (unsigned int)csrmsg->address, reg_value);	
+-	}
+-	else
+-		printk("drv: Command format error!\n");
+-
+-	csrmsg->default_value = reg_value;
+-		
+-	RAETH_PRINT("drv: rt2880_csr_msgsend() - msg to send!\n");		
+-	
+-	err = rt2880_csr_msgsend(csrmsg);	
+-	
+-	if ( err == -2 )
+-		printk("drv: msg send error!\n");
++    }
+ 
+-	skb_free_datagram(sk, skb);
++    csrmsg->default_value = reg_value;
++    err = rt2880_csr_msgsend(csrmsg, pid);
++    if ( err == -2 )
++        printk("drv: msg send error!\n");
+ }
+ 
+-int rt2880_csr_msgsend(CSR_MSG* csrmsg)
++int rt2880_csr_msgsend(CSR_MSG* csrmsg, int pid)
+ {
+-	struct sk_buff *skb;
+-	struct nlmsghdr *nlh = NULL;
+-	size_t size = 0;
+-	struct sock *send_syncnl = csr_msg_socket;
+-
+-	CSR_MSG* csr_reg;
+-	if (send_syncnl == NULL) {
+-		printk("drv: netlink_kernel_create() failed!\n");
+-		return -1;
+-	}
+-		
+-	size = NLMSG_SPACE(sizeof(CSR_MSG));
+-	skb = alloc_skb(size, GFP_ATOMIC);
+-	
+-	if(!skb)
+-	{
+-		printk("rt2880_csr_msgsend() : error! msg structure not available\n");
+-		return -1;
+-	}
+-	
+-	nlh = NLMSG_PUT(skb, 0, 0, RALINK_CSR_GROUP, size - sizeof(struct nlmsghdr));
+-	
+-	if (!nlh)
+-	{
+-		printk("rt2880_csr_msgsend() : error! nlh structure not available\n");
+-		return -1;
+-	}
+-
+-	csr_reg = NLMSG_DATA(nlh);
+-	if (!csr_reg)
+-	{
+-		printk("rt2880_csr_msgsend() : error! nlh structure not available\n");
+-		return -1;
+-	}
+-
+-	csr_reg->address	= csrmsg->address;
+-	csr_reg->default_value 	= csrmsg->default_value;
++    struct sk_buff *skb;
++    struct nlmsghdr *nlh = NULL;
++    size_t size = 0;
++    struct sock *send_syncnl = csr_msg_socket;
++
++    CSR_MSG* csr_reg;
++    if (send_syncnl == NULL)
++    {
++        printk("drv: netlink_kernel_create() failed!\n");
++        return -1;
++    }
++    size = NLMSG_SPACE(sizeof(CSR_MSG));
++    skb = alloc_skb(size, GFP_ATOMIC);
++    if(!skb)
++    {
++        printk("rt2880_csr_msgsend() : error! msg structure not available\n");
++        return -1;
++    }
++    nlh = nlmsg_put(skb, 0, 0, NLMSG_DONE, size - sizeof(struct nlmsghdr), 0);
++
++    if (!nlh)
++    {
++        printk("rt2880_csr_msgsend() : error! nlh structure not available\n");
++        return -1;
++    }
++
++    csr_reg = NLMSG_DATA(nlh);
++    if (!csr_reg)
++    {
++        printk("rt2880_csr_msgsend() : error! nlh structure not available\n");
++        return -1;
++    }
++    
++    csr_reg->enable  = csrmsg->enable;
++    csr_reg->address = csrmsg->address;
++    csr_reg->default_value  = csrmsg->default_value;
++#if defined CONFIG_RALINK_MT7620
++    csr_reg->rx_bytes = csrmsg->rx_bytes;
++    csr_reg->tx_bytes = csrmsg->tx_bytes;
++#endif
+ #if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,21)
+-	NETLINK_CB(skb).dst_group = RALINK_CSR_GROUP;
++    NETLINK_CB(skb).dst_group = 0;
+ #else
+-	NETLINK_CB(skb).dst_groups = RALINK_CSR_GROUP;
++    NETLINK_CB(skb).dst_groups = 0;
+ #endif
+-	netlink_broadcast(send_syncnl, skb, 0, RALINK_CSR_GROUP, GFP_ATOMIC);
+-	return 0;
+-
+-nlmsg_failure:
+-	return -2;	
++    nlmsg_unicast(send_syncnl, skb, pid);
++    return 0;
+ }
+ 
+ int csr_netlink_init()
+ {
+-
++    struct netlink_kernel_cfg cfg = {
++        .input = rt2880_csr_receiver,
++    };
+ #if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,21)
+-	csr_msg_socket = netlink_kernel_create(NETLINK_CSR, RALINK_CSR_GROUP, rt2880_csr_receiver, THIS_MODULE);
++    csr_msg_socket = netlink_kernel_create(&init_net, RALINK_NETLINK, &cfg);
+ #else
+-	csr_msg_socket = netlink_kernel_create(NETLINK_CSR, rt2880_csr_receiver);
++    csr_msg_socket = netlink_kernel_create(&init_net, RALINK_NETLINK, 0, rt2880_csr_receiver, NULL, THIS_MODULE);
+ #endif
+-
+-	if ( csr_msg_socket == NULL )
+-		printk("unable to create netlink socket!\n");
+-	else
+-		printk("Netlink init ok!\n");
+-	return 0;
++    if ( csr_msg_socket == NULL)
++        printk("unable to create netlink socket!\n");
++    else
++        printk("Netlink init ok!\n");
++    return 0;
+ }
+ 
+ void csr_netlink_end()
+ {
+-	if (csr_msg_socket != NULL){
+-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,21)
+-		sock_release(csr_msg_socket->sk_socket);
+-#else
+-		sock_release(csr_msg_socket->socket);
+-#endif
+-		printk("Netlink end...\n");
+-	}
++    if (csr_msg_socket != NULL)
++    {
++        netlink_kernel_release(csr_msg_socket);
++        printk("Netlink end...\n");
++    }
+ }
+Index: linux.3.10.4/drivers/net/raeth/ra_netlink.h	
+==================================================================
+--- linux.3.10.14.orig/drivers/net/raeth/ra_netlink.h
++++ linux.3.10.4/drivers/net/raeth/ra_netlink.h	
+@@ -2,8 +2,8 @@
+ #define RA_NETLINK
+ 
+ #include "csr_netlink.h"
+-int rt2880_csr_msgsend(CSR_MSG* csrmsg);
+-void rt2880_csr_receiver(struct sock *sk, int len);
++int rt2880_csr_msgsend(CSR_MSG* csrmsg, int pid);
++void rt2880_csr_receiver(struct sk_buff  *skb);
+ int csr_netlink_init(void);
+ void csr_netlink_end(void);
+ 
+Index: linux.3.10.4/drivers/net/raeth/ra_mac.h	
+==================================================================
+--- linux.3.10.14.orig/drivers/net/raeth/ra_mac.h	
++++ linux.3.10.4/drivers/net/raeth/ra_mac.h	
+@@ -11,7 +11,9 @@
+ void dump_qos(void);
+ void dump_reg(struct seq_file *s);
+ void dump_cp0(void);
+-
++#if defined CONFIG_RALINK_MT7620
++unsigned long read_port(int port, int rx);
++#endif
+ int debug_proc_init(void);
+ void debug_proc_exit(void);
+ 
+Index: linux.3.10.4/drivers/net/raeth/ra_mac.c
+==================================================================
+--- linux.3.10.14.orig/drivers/net/raeth/ra_mac.c
++++ linux.3.10.4/drivers/net/raeth/ra_mac.c
+@@ -1700,6 +1700,51 @@
+ };
+ #endif
+ 
++#if defined CONFIG_RALINK_MT7620
++unsigned long read_port(int port, int rx)
++{
++    switch(port)
++    {
++        case 0:
++            if(rx)
++                return ((p0_rx_byte_cnt << 22) + (sysRegRead(RALINK_ETH_SW_BASE+0x4028) >> 10));
++            else
++                return  ((p0_tx_byte_cnt << 22) + (sysRegRead(RALINK_ETH_SW_BASE+0x4018) >> 10));
++            break;
++        case 1:
++            if(rx)
++                return ((p1_rx_byte_cnt << 22) + (sysRegRead(RALINK_ETH_SW_BASE+0x4128) >> 10));
++            else
++                return ((p1_tx_byte_cnt << 22) + (sysRegRead(RALINK_ETH_SW_BASE+0x4118) >> 10));
++            break;
++        case 2:
++            if(rx)
++                return  ((p2_rx_byte_cnt << 22) + (sysRegRead(RALINK_ETH_SW_BASE+0x4228) >> 10));
++            else
++                return  ((p2_tx_byte_cnt << 22) + (sysRegRead(RALINK_ETH_SW_BASE+0x4218) >> 10));
++            break;
++        case 3:
++            if(rx)
++                return ((p3_rx_byte_cnt << 22) + (sysRegRead(RALINK_ETH_SW_BASE+0x4328) >> 10));
++            else
++                return ((p3_tx_byte_cnt << 22) + (sysRegRead(RALINK_ETH_SW_BASE+0x4318) >> 10));
++            break;
++        case 4:
++            if(rx)
++                return ((p4_rx_byte_cnt << 22) + (sysRegRead(RALINK_ETH_SW_BASE+0x4428) >> 10));
++            else
++                return  ((p4_tx_byte_cnt << 22) + (sysRegRead(RALINK_ETH_SW_BASE+0x4418) >> 10));
++            break;
++        case 5:
++            if(rx)
++                return ((p5_rx_byte_cnt << 22) + (sysRegRead(RALINK_ETH_SW_BASE+0x4528) >> 10));
++            else
++                return ((p5_tx_byte_cnt << 22) + (sysRegRead(RALINK_ETH_SW_BASE+0x4518) >> 10));
++            break;
++    }
++    return 0;
++}
++#endif
+ int debug_proc_init(void)
+ {
+     if (procRegDir == NULL)

@@ -1,0 +1,1 @@
+cmd_net/ipv6/netfilter/nf_defrag_ipv6.o := mipsel-openwrt-linux-uclibc-ld  -m elf32ltsmip   -r -o net/ipv6/netfilter/nf_defrag_ipv6.o net/ipv6/netfilter/nf_defrag_ipv6_hooks.o net/ipv6/netfilter/nf_conntrack_reasm.o 

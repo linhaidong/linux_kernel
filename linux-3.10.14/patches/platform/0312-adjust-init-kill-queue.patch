@@ -1,0 +1,16 @@
+Index: linux-3.10.14/drivers/net/raeth/raether.c
+===================================================================
+--- linux-3.10.14.orig/drivers/net/raeth/raether.c
++++ linux-3.10.14/drivers/net/raeth/raether.c
+@@ -2792,10 +2792,10 @@ int ei_open(struct net_device *dev)
+ 	    printk("dev->dev_addr is empty !\n");
+ 	} 
+ #if defined (CONFIG_RT_3052_ESW)
++	INIT_WORK(&ei_local->kill_sig_wq, kill_sig_workq);
+ 	err = request_irq(SURFBOARDINT_ESW, esw_interrupt, IRQF_DISABLED, "Ralink_ESW", dev);
+ 	if (err)
+ 		return err;
+-	INIT_WORK(&ei_local->kill_sig_wq, kill_sig_workq);
+ #if defined (CONFIG_RALINK_MT7621)
+         mii_mgr_write(31, 0x7008, 0x1f); //enable switch link change intr
+ 	

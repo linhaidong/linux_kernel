@@ -1,0 +1,13 @@
+Index: linux-3.10.14-p112871/drivers/net/raeth/raether.c
+===================================================================
+--- linux-3.10.14-p112871.orig/drivers/net/raeth/raether.c	2014-11-20 14:54:58.000000000 +0800
++++ linux-3.10.14-p112871/drivers/net/raeth/raether.c	2015-10-29 17:20:52.657627290 +0800
+@@ -1067,7 +1067,7 @@
+ 	struct task_struct *p = NULL;
+ 
+ 	//read udhcpc pid from file, and send signal USR2,USR1 to get a new IP
+-	fp = filp_open("/var/run/udhcpc.pid", O_RDONLY, 0);
++	fp = filp_open("/var/run/udhcpc-eth0.2.pid", O_RDONLY, 0);
+ 	if (IS_ERR(fp))
+ 	    return;
+ 

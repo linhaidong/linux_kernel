@@ -1,0 +1,13 @@
+Index: linux-3.10.14/drivers/mmc/core/sd.c
+===================================================================
+--- linux-3.10.14.orig/drivers/mmc/core/sd.c
++++ linux-3.10.14/drivers/mmc/core/sd.c
+@@ -866,7 +866,7 @@ int mmc_sd_setup_card(struct mmc_host *h
+ 				"switch. assuming write-enable.\n",
+ 				mmc_hostname(host));
+ 		} else if (ro > 0) {
+-			mmc_card_set_readonly(card);
++			//mmc_card_set_readonly(card);
+ 		}
+ 	}
+ 
