@@ -49,6 +49,13 @@ struct inet_timewait_death_row tcp_death_row = {
 };
 EXPORT_SYMBOL_GPL(tcp_death_row);
 
+
+
+/* @seq：接收段的序号。
+ * @end_seq：接收段的结束序号。
+ * @s_win：接收窗口的起始序号。
+ * @e_win：接收窗口的结束序号。
+ */
 static bool tcp_in_window(u32 seq, u32 end_seq, u32 s_win, u32 e_win)
 {
 	if (seq == s_win)
@@ -500,6 +507,20 @@ EXPORT_SYMBOL(tcp_create_openreq_child);
  * We don't need to initialize tmp_opt.sack_ok as we don't use the results
  */
 
+/* --------------------------------------------------------------------------*/
+/**
+ * @Synopsis 检测ack的合法性，如果是正确的ack则创建新的sock并返回
+ * 　　　　　如果不合法，则发送REST
+ *
+ * @Param sk
+ * @Param skb
+ * @Param req
+ * @Param prev
+ * @Param fastopen
+ *
+ * @Returns   
+ */
+/* ----------------------------------------------------------------------------*/
 struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 			   struct request_sock *req,
 			   struct request_sock **prev,
@@ -514,21 +535,26 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 	BUG_ON(fastopen == (sk->sk_state == TCP_LISTEN));
 
 	tmp_opt.saw_tstamp = 0;
+    /* 如果此ACK带有选项 */
 	if (th->doff > (sizeof(struct tcphdr)>>2)) {
+        /* 解析TCP选项，保存到实例中 */
 		tcp_parse_options(skb, &tmp_opt, 0, NULL);
 
 		if (tmp_opt.saw_tstamp) {
+            /* 客户端发送SYN段的时间 */
 			tmp_opt.ts_recent = req->ts_recent;
 			/* We do not store true stamp, but it is not required,
 			 * it can be estimated (approximately)
 			 * from another data.
 			 */
 			tmp_opt.ts_recent_stamp = get_seconds() - ((TCP_TIMEOUT_INIT/HZ)<<req->num_timeout);
+            /* 检查客户端时间戳是否回绕 */
 			paws_reject = tcp_paws_reject(&tmp_opt, th->rst);
 		}
 	}
 
 	/* Check for pure retransmitted SYN. */
+    /* Check for pure retransmitted SYN. 处理重传的SYN */
 	if (TCP_SKB_CB(skb)->seq == tcp_rsk(req)->rcv_isn &&
 	    flg == TCP_FLAG_SYN &&
 	    !paws_reject) {
@@ -555,6 +581,9 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 		 * Reset timer after retransmitting SYNACK, similar to
 		 * the idea of fast retransmit in recovery.
 		 */
+        /* 重新发送SYNACK。
+         * 实例为tcp_request_sock_ops，调用tcp_v4_rtx_synack()
+         */
 		if (!inet_rtx_syn_ack(sk, req))
 			req->expires = min(TCP_TIMEOUT_INIT << req->num_timeout,
 					   TCP_RTO_MAX) + jiffies;
@@ -618,6 +647,9 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 	 * elsewhere and is checked directly against the child socket rather
 	 * than req because user data may have been sent out.
 	 */
+    /* 如果接收段包含ACK标志，但确认序号不对，则返回监听sock。
+     * 然后在tcp_v4_do_rcv()中发送RST段。
+     */
 	if ((flg & TCP_FLAG_ACK) && !fastopen &&
 	    (TCP_SKB_CB(skb)->ack_seq !=
 	     tcp_rsk(req)->snt_isn + 1))
@@ -629,11 +661,14 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 	 */
 
 	/* RFC793: "first check sequence number". */
-
+    /* 如果发生了回绕，或者接收序号不在接收窗口内 */
 	if (paws_reject || !tcp_in_window(TCP_SKB_CB(skb)->seq, TCP_SKB_CB(skb)->end_seq,
 					  tcp_rsk(req)->rcv_nxt, tcp_rsk(req)->rcv_nxt + req->rcv_wnd)) {
 		/* Out of window: send ACK and drop. */
 		if (!(flg & TCP_FLAG_RST))
+            /* 发送ACK段。
+             * 实例为tcp_request_sock_ops，调用tcp_v4_reqsk_send_ack()
+             */
 			req->rsk_ops->send_ack(sk, skb, req);
 		if (paws_reject)
 			NET_INC_STATS_BH(sock_net(sk), LINUX_MIB_PAWSESTABREJECTED);
@@ -641,7 +676,7 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 	}
 
 	/* In sequence, PAWS is OK. */
-
+    /* 保存ACK段的时间戳 */
 	if (tmp_opt.saw_tstamp && !after(TCP_SKB_CB(skb)->seq, tcp_rsk(req)->rcv_nxt))
 		req->ts_recent = tmp_opt.rcv_tsval;
 
@@ -694,17 +729,21 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 	 * ESTABLISHED STATE. If it will be dropped after
 	 * socket is created, wait for troubles.
 	 */
+    /*  三次握手完成以后，调用tcp_v4_syn_recv_sock()创建和初始化一个新的传输控制块 */
 	child = inet_csk(sk)->icsk_af_ops->syn_recv_sock(sk, skb, req, NULL);
 	if (child == NULL)
 		goto listen_overflow;
-
+    /* 把连接请求块从半连接队列中删除 */
 	inet_csk_reqsk_queue_unlink(sk, req, prev);
+    /* 更新半连接队列的长度，如果为0，则删除定时器 */
 	inet_csk_reqsk_queue_removed(sk, req);
 
+    /* 把完成三次握手的连接请求块，和新的sock关联起来，并把它移入全连接队列中 */
 	inet_csk_reqsk_queue_add(sk, req, child);
 	return child;
 
 listen_overflow:
+    /* tcp_abort_on_overflow表示全连接队列满了，是给客户端发RST段，还是默默丢弃 */
 	if (!sysctl_tcp_abort_on_overflow) {
 		inet_rsk(req)->acked = 1;
 		return NULL;
@@ -717,12 +756,14 @@ embryonic_reset:
 		 * avoid becoming vulnerable to outside attack aiming at
 		 * resetting legit local connections.
 		 */
+        /* 实例为tcp_request_sock_ops，调用tcp_v4_send_reset()。*/
 		req->rsk_ops->send_reset(sk, skb);
 	} else if (fastopen) { /* received a valid RST pkt */
 		reqsk_fastopen_remove(sk, req, true);
 		tcp_reset(sk);
 	}
 	if (!fastopen) {
+        /* 把连接请求块从半连接队列中删除，更新半连接队列 */
 		inet_csk_reqsk_queue_drop(sk, req, prev);
 		NET_INC_STATS_BH(sock_net(sk), LINUX_MIB_EMBRYONICRSTS);
 	}

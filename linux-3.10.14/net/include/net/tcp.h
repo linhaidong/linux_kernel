@@ -1140,11 +1140,23 @@ static inline int tcp_fin_time(const struct sock *sk)
 	return fin_timeout;
 }
 
+/* --------------------------------------------------------------------------*/
+/**
+ * @Synopsis  检查客户端的时间戳是否合法。
+             要求客户端发送SYN的时间戳 <= 客户端重传SYN的时间戳 、客户端发送ACK的时间戳
+ *
+ * @Param rx_opt
+ * @Param paws_win
+ *
+ * @Returns   
+ */
+/* ----------------------------------------------------------------------------*/
 static inline bool tcp_paws_check(const struct tcp_options_received *rx_opt,
 				  int paws_win)
 {
 	if ((s32)(rx_opt->ts_recent - rx_opt->rcv_tsval) <= paws_win)
 		return true;
+    /* 重传时间超过24天？*/
 	if (unlikely(get_seconds() >= rx_opt->ts_recent_stamp + TCP_PAWS_24DAYS))
 		return true;
 	/*
@@ -1175,6 +1187,7 @@ static inline bool tcp_paws_reject(const struct tcp_options_received *rx_opt,
 
 	   However, we can relax time bounds for RST segments to MSL.
 	 */
+    /* ACK段包含RST标志 */
 	if (rst && get_seconds() >= rx_opt->ts_recent_stamp + TCP_PAWS_MSL)
 		return false;
 	return true;

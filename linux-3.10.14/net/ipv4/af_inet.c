@@ -201,10 +201,15 @@ int inet_listen(struct socket *sock, int backlog)
 	lock_sock(sk);
 
 	err = -EINVAL;
+     /* 此时套接口状态需为SS_UNCONNECTED，套接口类型需为SOCK_STREAM */
 	if (sock->state != SS_UNCONNECTED || sock->type != SOCK_STREAM)
 		goto out;
 
+
+    /* 当前连接状态 */
 	old_state = sk->sk_state;
+    
+    /* 当前的连接需为CLOSED或LISTEN状态 */
 	if (!((1 << old_state) & (TCPF_CLOSE | TCPF_LISTEN)))
 		goto out;
 
@@ -232,6 +237,8 @@ int inet_listen(struct socket *sock, int backlog)
 			if (err)
 				goto out;
 		}
+        //初始化半链接队列
+        ///启动监听 
 		err = inet_csk_listen_start(sk, backlog);
 		if (err)
 			goto out;
@@ -1556,6 +1563,11 @@ static const struct net_protocol igmp_protocol = {
 };
 #endif
 
+/* --------------------------------------------------------------------------*/
+/**
+ * @Synopsis  tcp 协议的具体操作
+ */
+/* ----------------------------------------------------------------------------*/
 static const struct net_protocol tcp_protocol = {
 	.early_demux	=	tcp_v4_early_demux,
 	.handler	=	tcp_v4_rcv,

@@ -1268,6 +1268,12 @@ static bool tcp_v4_inbound_md5_hash(struct sock *sk, const struct sk_buff *skb)
 
 #endif
 
+/* --------------------------------------------------------------------------*/
+/**
+ * @Synopsis  request_sock_ops为处理连接请求块的函数指针表，
+ *            对于TCP，它的实例为tcp_request_sock_ops
+ */
+/* ----------------------------------------------------------------------------*/
 struct request_sock_ops tcp_request_sock_ops __read_mostly = {
 	.family		=	PF_INET,
 	.obj_size	=	sizeof(struct tcp_request_sock),
@@ -1736,31 +1742,46 @@ put_and_exit:
 }
 EXPORT_SYMBOL(tcp_v4_syn_recv_sock);
 
+/*
+ *收到SYN段后，服务器端会分配一个连接请求块，并初始化这个连接请求块。
+构造和发送SYNACK段。然后把这个连接请求块链入半连接队列中，启动超时定时器。
+之后如果再收到ACK，就能完成三次握手了。
+ * */
 static struct sock *tcp_v4_hnd_req(struct sock *sk, struct sk_buff *skb)
 {
 	struct tcphdr *th = tcp_hdr(skb);
 	const struct iphdr *iph = ip_hdr(skb);
 	struct sock *nsk;
 	struct request_sock **prev;
+
+
+    /* 在半连接队列中查找是否已有符合的连接请求块，如果有，则说明这是三次握手的最后一个ACK。*/
 	/* Find possible connection requests. */
 	struct request_sock *req = inet_csk_search_req(sk, &prev, th->source,
 						       iph->saddr, iph->daddr);
+    
+    /* 服务器端处理三次握手的最后一个ACK */
+    /*tcp_check_req()来进行验证，如果合法，则完成三次握手*/
 	if (req)
 		return tcp_check_req(sk, skb, req, prev, false);
 
+    /* 如果在半连接队列中没找到，则在ESTABLISHED状态的哈希表中查找。*/
 	nsk = inet_lookup_established(sock_net(sk), &tcp_hashinfo, iph->saddr,
 			th->source, iph->daddr, th->dest, inet_iif(skb));
 
+    /* 如果在ehash表中找到对应的sock，且不处于TIME_WAIT状态 */
 	if (nsk) {
 		if (nsk->sk_state != TCP_TIME_WAIT) {
 			bh_lock_sock(nsk);
 			return nsk;
 		}
+        /* 释放tw结构体 */
 		inet_twsk_put(inet_twsk(nsk));
 		return NULL;
 	}
 
 #ifdef CONFIG_SYN_COOKIES
+    /* 如果使用SYN Cookie，则检查cookie是否合法，合法则直接完成三次握手 */
 	if (!th->syn)
 		sk = cookie_v4_check(sk, skb, &(IPCB(skb)->opt));
 #endif
@@ -1810,7 +1831,7 @@ int tcp_v4_do_rcv(struct sock *sk, struct sk_buff *skb)
 	if (tcp_v4_inbound_md5_hash(sk, skb))
 		goto discard;
 #endif
-
+    /* 当状态为ESTABLISHED时，用tcp_rcv_established()接收处理 */
 	if (sk->sk_state == TCP_ESTABLISHED) { /* Fast path */
 		struct dst_entry *dst = sk->sk_rx_dst;
 
@@ -1822,23 +1843,33 @@ int tcp_v4_do_rcv(struct sock *sk, struct sk_buff *skb)
 				sk->sk_rx_dst = NULL;
 			}
 		}
+        /* 连接已建立时的处理路径 */
 		if (tcp_rcv_established(sk, skb, tcp_hdr(skb), skb->len)) {
 			rsk = sk;
 			goto reset;
 		}
 		return 0;
 	}
-
+    /* 检查报文长度、报文校验和 */
 	if (skb->len < tcp_hdrlen(skb) || tcp_checksum_complete(skb))
 		goto csum_err;
 
+    //判断为listen状态
+    ///* 如果这个sock处于监听状态，被动打开时的处理，包括收到SYN或ACK */
 	if (sk->sk_state == TCP_LISTEN) {
+        /* 返回值：
+         * NULL，错误
+         * nsk == sk，接收到SYN
+         * nsk != sk，接收到ACK
+         */
+        /* 接收SYN的处理 */
 		struct sock *nsk = tcp_v4_hnd_req(sk, skb);
 		if (!nsk)
 			goto discard;
 
 		if (nsk != sk) {
 			sock_rps_save_rxhash(nsk, skb);
+            /* 处理新的sock */
 			if (tcp_child_process(sk, nsk, skb)) {
 				rsk = nsk;
 				goto reset;
@@ -1848,6 +1879,8 @@ int tcp_v4_do_rcv(struct sock *sk, struct sk_buff *skb)
 	} else
 		sock_rps_save_rxhash(sk, skb);
 
+    //接收数据处理
+    // /* 处理除了ESTABLISHED和TIME_WAIT之外的所有状态 */
 	if (tcp_rcv_state_process(sk, skb, tcp_hdr(skb), skb->len)) {
 		rsk = sk;
 		goto reset;
@@ -1855,6 +1888,7 @@ int tcp_v4_do_rcv(struct sock *sk, struct sk_buff *skb)
 	return 0;
 
 reset:
+    /* 发送RST包 */
 	tcp_v4_send_reset(rsk, skb);
 discard:
 	kfree_skb(skb);
@@ -2034,6 +2068,7 @@ process:
 #endif
 		{
 			if (!tcp_prequeue(sk, skb))
+                //接收数据
 				ret = tcp_v4_do_rcv(sk, skb);
 		}
 	} else if (unlikely(sk_add_backlog(sk, skb,

@@ -1,0 +1,22 @@
+tcp sock recv
+===
+
+接收
+/* --------------------------------------------------------------------------*/
+/**
+ * @Synopsis  tcp 协议的具体操作
+ */
+/* ----------------------------------------------------------------------------*/
+static const struct net_protocol tcp_protocol = {
+	.early_demux	=	tcp_v4_early_demux,
+	.handler	=	tcp_v4_rcv,
+	.err_handler	=	tcp_v4_err,
+	.no_policy	=	1,
+	.netns_ok	=	1,
+};
+入口函数
+tcp_v4_do_rcv
+SYN包tcp_v4_hnd_req
+
+参考文档
+https://blog.csdn.net/zhangskd/article/details/17923917

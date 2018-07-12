@@ -1,0 +1,13 @@
+listen函数
+inet_listen调用inet_csk_listen_start建立半连接队列.
+
+/*
+ * @sk_ack_backlog: current listen backlog
+ * @sk_max_ack_backlog: listen backlog set in listen()
+ */
+struct sock {
+    ...
+    unsigned short sk_ack_backlog; /* 当前的backlog，当前全连接队列长度 */
+    unsigned short sk_max_ack_backlog; /* 最大的backlog，最大全连接队列长度 */
+    ...
+}

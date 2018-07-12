@@ -489,26 +489,45 @@ static inline u32 inet_synq_hash(const __be32 raddr, const __be16 rport,
 #define AF_INET_FAMILY(fam) 1
 #endif
 
+/* --------------------------------------------------------------------------*/
+/**
+ * @Synopsis  在半连接队列的哈希表中，寻找符合条件的连接请求块
+ *          　如果没有找到，则添加到hash列表中
+ *
+ * @Param sk
+ * @Param prevp
+ * @Param rport
+ * @Param raddr
+ * @Param laddr
+ *
+ * @Returns   
+ */
+/* ----------------------------------------------------------------------------*/
 struct request_sock *inet_csk_search_req(const struct sock *sk,
 					 struct request_sock ***prevp,
 					 const __be16 rport, const __be32 raddr,
 					 const __be32 laddr)
 {
 	const struct inet_connection_sock *icsk = inet_csk(sk);
-	struct listen_sock *lopt = icsk->icsk_accept_queue.listen_opt;
+    /* 半连接队列 */
+    struct listen_sock *lopt = icsk->icsk_accept_queue.listen_opt;
 	struct request_sock *req, **prev;
-
+    
+    /* 通过哈希值，找到哈希桶，然后遍历哈希桶寻找符合条件的连接请求块 */
 	for (prev = &lopt->syn_table[inet_synq_hash(raddr, rport, lopt->hash_rnd,
 						    lopt->nr_table_entries)];
 	     (req = *prev) != NULL;
 	     prev = &req->dl_next) {
 		const struct inet_request_sock *ireq = inet_rsk(req);
 
+        //根据本地的地址和端口，判断是否相等
 		if (ireq->rmt_port == rport &&
 		    ireq->rmt_addr == raddr &&
 		    ireq->loc_addr == laddr &&
 		    AF_INET_FAMILY(req->rsk_ops->family)) {
+            /* 连接尚未建立，sk应该为NULL */
 			WARN_ON(req->sk);
+            /* 保存此req指针的指针 */
 			*prevp = prev;
 			break;
 		}
@@ -748,17 +767,32 @@ void inet_csk_prepare_forced_close(struct sock *sk)
 }
 EXPORT_SYMBOL(inet_csk_prepare_forced_close);
 
+/* --------------------------------------------------------------------------*/
+/**
+ * @Synopsis    1. 创建半连接队列的实例，初始化全连接队列。
+                2. 初始化sock的一些变量，把它的状态设为TCP_LISTEN。
+                3. 检查端口是否可用，防止bind()后其它进程修改了端口信息。
+                4. 把sock链接进入监听哈希表listening_hash中。
+ *
+ * @Param sk
+ * @Param nr_table_entries
+ *
+ * @Returns   
+ */
+/* ----------------------------------------------------------------------------*/
 int inet_csk_listen_start(struct sock *sk, const int nr_table_entries)
 {
 	struct inet_sock *inet = inet_sk(sk);
 	struct inet_connection_sock *icsk = inet_csk(sk);
+    /* 初始化全连接队列，创建半连接队列的实例 */
 	int rc = reqsk_queue_alloc(&icsk->icsk_accept_queue, nr_table_entries);
 
 	if (rc != 0)
 		return rc;
-
+    /* 在返回inet_listen()时赋值 */
 	sk->sk_max_ack_backlog = 0;
 	sk->sk_ack_backlog = 0;
+    /* icsk->icsk_ack结构清零 */
 	inet_csk_delack_init(sk);
 
 	/* There is race window here: we announce ourselves listening,
@@ -766,17 +800,21 @@ int inet_csk_listen_start(struct sock *sk, const int nr_table_entries)
 	 * It is OK, because this socket enters to hash table only
 	 * after validation is complete.
 	 */
+    /* 把sock的状态置为LISTEN */
 	sk->sk_state = TCP_LISTEN;
+ 
+    /* 检查端口是否仍然可用，防止bind()后其它进程修改了端口信息 */
 	if (!sk->sk_prot->get_port(sk, inet->inet_num)) {
 		inet->inet_sport = htons(inet->inet_num);
-
 		sk_dst_reset(sk);
+        /* 把sock链接入监听哈希表中 */
 		sk->sk_prot->hash(sk);
 
 		return 0;
 	}
 
 	sk->sk_state = TCP_CLOSE;
+    /* 如果端口不可用，则释放半连接队列 */
 	__reqsk_queue_destroy(&icsk->icsk_accept_queue);
 	return -EADDRINUSE;
 }
