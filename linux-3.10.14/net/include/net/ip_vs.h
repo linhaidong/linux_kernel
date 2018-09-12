@@ -1030,6 +1030,7 @@ struct netns_ipvs {
 	int			threads_mask;
 	int			send_mesg_maxlen;
 	int			recv_mesg_maxlen;
+    //lvs角色：master and backend
 	volatile int		sync_state;
 	volatile int		master_syncid;
 	volatile int		backup_syncid;
@@ -1222,6 +1223,13 @@ static inline bool __ip_vs_conn_get(struct ip_vs_conn *cp)
 	return atomic_inc_not_zero(&cp->refcnt);
 }
 
+/* --------------------------------------------------------------------------*/
+/**
+ * @Synopsis  放回conn，不重启定时器
+ *
+ * @Param cp
+ */
+/* ----------------------------------------------------------------------------*/
 /* put back the conn without restarting its timer */
 static inline void __ip_vs_conn_put(struct ip_vs_conn *cp)
 {

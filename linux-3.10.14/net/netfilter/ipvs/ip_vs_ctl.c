@@ -3298,6 +3298,17 @@ nla_put_failure:
 	return skb->len;
 }
 
+/* --------------------------------------------------------------------------*/
+/**
+ * @Synopsis  处理ipvsadm 程序发送的同步命令
+ *            根据master和slave的角色分别建立不同的处理线程
+ *
+ * @Param net
+ * @Param attrs
+ *
+ * @Returns   
+ */
+/* ----------------------------------------------------------------------------*/
 static int ip_vs_genl_new_daemon(struct net *net, struct nlattr **attrs)
 {
 	if (!(attrs[IPVS_DAEMON_ATTR_STATE] &&

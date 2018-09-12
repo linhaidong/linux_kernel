@@ -443,6 +443,16 @@ static const char * udp_state_name(int state)
 	return udp_state_name_table[state] ? udp_state_name_table[state] : "?";
 }
 
+/* --------------------------------------------------------------------------*/
+/**
+ * @Synopsis  更新链接的信息
+ *
+ * @Param cp
+ * @Param direction
+ * @Param skb
+ * @Param pd
+ */
+/* ----------------------------------------------------------------------------*/
 static void
 udp_state_transition(struct ip_vs_conn *cp, int direction,
 		     const struct sk_buff *skb,

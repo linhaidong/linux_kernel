@@ -484,6 +484,11 @@ struct ip_vs_app;
 struct sk_buff;
 struct ip_vs_proto_data;
 
+/* --------------------------------------------------------------------------*/
+/**
+ * @Synopsis  ipvs 协议操作函数
+ */
+/* ----------------------------------------------------------------------------*/
 struct ip_vs_protocol {
 	struct ip_vs_protocol	*next;
 	char			*name;
@@ -545,14 +550,21 @@ struct ip_vs_protocol {
 	void (*timeout_change)(struct ip_vs_proto_data *pd, int flags);
 };
 
+/* --------------------------------------------------------------------------*/
+/**
+ * @Synopsis  ipvs 协议表示
+ */
+/* ----------------------------------------------------------------------------*/
 /*
  * protocol data per netns
  */
 struct ip_vs_proto_data {
 	struct ip_vs_proto_data	*next;
+    //ipvs 支持的协议
 	struct ip_vs_protocol	*pp;
 	int			*timeout_table;	/* protocol timeout table */
 	atomic_t		appcnt;		/* counter of proto app incs. */
+    //tcp 状态表
 	struct tcp_states_t	*tcp_state_table;
 };
 
@@ -564,7 +576,9 @@ struct ip_vs_conn_param {
 	struct net			*net;
 	const union nf_inet_addr	*caddr;
 	const union nf_inet_addr	*vaddr;
+    //客户端链接端口
 	__be16				cport;
+    //服务虚拟端口
 	__be16				vport;
 	__u16				protocol;
 	u16				af;
@@ -580,14 +594,18 @@ struct ip_vs_conn_param {
 struct ip_vs_conn {
 	struct hlist_node	c_list;         /* hashed list heads */
 	/* Protocol, addresses and port numbers */
+    //客户端链接端口
 	__be16                  cport;
+    //目的realserver端口
 	__be16                  dport;
+    // 服务虚拟端口
 	__be16                  vport;
 	u16			af;		/* address family */
 	union nf_inet_addr      caddr;          /* client address */
 	union nf_inet_addr      vaddr;          /* virtual address */
 	union nf_inet_addr      daddr;          /* destination address */
 	volatile __u32          flags;          /* status flags */
+    //协议
 	__u16                   protocol;       /* Which protocol (TCP/UDP) */
 #ifdef CONFIG_NET_NS
 	struct net              *net;           /* Name space */
@@ -902,13 +920,25 @@ struct ip_vs_app {
 	void (*timeout_change)(struct ip_vs_app *app, int flags);
 };
 
+/* --------------------------------------------------------------------------*/
+/**
+ * @Synopsis  master 同步master的状态
+ */
+/* ----------------------------------------------------------------------------*/
 struct ipvs_master_sync_state {
+    //同步队列
 	struct list_head	sync_queue;
-	struct ip_vs_sync_buff	*sync_buff;
-	int			sync_queue_len;
+	//信息存储
+    struct ip_vs_sync_buff	*sync_buff;
+	//队列长度
+    int			sync_queue_len;
+    //等待队列长度
 	unsigned int		sync_queue_delay;
+    //线程结构
 	struct task_struct	*master_thread;
+    //延迟工作
 	struct delayed_work	master_wakeup_work;
+    //上层结构
 	struct netns_ipvs	*ipvs;
 };
 
@@ -1024,6 +1054,7 @@ struct netns_ipvs {
 	struct timer_list	est_timer;	/* Estimation timer */
 	/* ip_vs_sync */
 	spinlock_t		sync_lock;
+    //master status 
 	struct ipvs_master_sync_state *ms;
 	spinlock_t		sync_buff_lock;
 	struct task_struct	**backup_threads;
@@ -1065,6 +1096,15 @@ static inline int sysctl_sync_period(struct netns_ipvs *ipvs)
 	return ACCESS_ONCE(ipvs->sysctl_sync_threshold[1]);
 }
 
+/* --------------------------------------------------------------------------*/
+/**
+ * @Synopsis  查看同步刷新时间间隔
+ *
+ * @Param ipvs
+ *
+ * @Returns   
+ */
+/* ----------------------------------------------------------------------------*/
 static inline unsigned int sysctl_sync_refresh_period(struct netns_ipvs *ipvs)
 {
 	return ACCESS_ONCE(ipvs->sysctl_sync_refresh_period);
@@ -1182,6 +1222,20 @@ enum {
 	IP_VS_DIR_LAST,
 };
 
+/* --------------------------------------------------------------------------*/
+/**
+ * @Synopsis  填充net param 信息
+ *
+ * @Param net
+ * @Param af
+ * @Param protocol
+ * @Param caddr
+ * @Param cport
+ * @Param vaddr
+ * @Param vport
+ * @Param p
+ */
+/* ----------------------------------------------------------------------------*/
 static inline void ip_vs_conn_fill_param(struct net *net, int af, int protocol,
 					 const union nf_inet_addr *caddr,
 					 __be16 cport,

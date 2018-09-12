@@ -31,6 +31,20 @@
 
 #include <net/ip_vs.h>
 
+/* --------------------------------------------------------------------------*/
+/**
+ * @Synopsis  tcp 协议的调度
+ *
+ * @Param af
+ * @Param skb
+ * @Param pd
+ * @Param verdict
+ * @Param cpp
+ * @Param iph
+ *
+ * @Returns   
+ */
+/* ----------------------------------------------------------------------------*/
 static int
 tcp_conn_schedule(int af, struct sk_buff *skb, struct ip_vs_proto_data *pd,
 		  int *verdict, struct ip_vs_conn **cpp,

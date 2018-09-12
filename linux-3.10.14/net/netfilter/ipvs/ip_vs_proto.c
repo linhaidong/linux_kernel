@@ -153,6 +153,16 @@ struct ip_vs_protocol * ip_vs_proto_get(unsigned short proto)
 }
 EXPORT_SYMBOL(ip_vs_proto_get);
 
+/* --------------------------------------------------------------------------*/
+/**
+ * @Synopsis  通过hash 查找ipvs支持的协议
+ *
+ * @Param ipvs
+ * @Param proto
+ *
+ * @Returns   
+ */
+/* ----------------------------------------------------------------------------*/
 /*
  *	get ip_vs_protocol object data by netns and proto
  */
@@ -170,6 +180,16 @@ __ipvs_proto_data_get(struct netns_ipvs *ipvs, unsigned short proto)
 	return NULL;
 }
 
+/* --------------------------------------------------------------------------*/
+/**
+ * @Synopsis  查找ipvs 是否支持协议
+ *
+ * @Param net
+ * @Param proto
+ *
+ * @Returns   
+ */
+/* ----------------------------------------------------------------------------*/
 struct ip_vs_proto_data *
 ip_vs_proto_data_get(struct net *net, unsigned short proto)
 {
@@ -363,6 +383,14 @@ void __net_exit ip_vs_protocol_net_cleanup(struct net *net)
 	}
 }
 
+/* --------------------------------------------------------------------------*/
+/**
+ * @Synopsis  为了使用ip_vs_protocol结构，在对支持的协议做
+ *            lvs相关处理的时候调用那种方法
+ *
+ * @Returns   
+ */
+/* ----------------------------------------------------------------------------*/
 int __init ip_vs_protocol_init(void)
 {
 	char protocols[64];

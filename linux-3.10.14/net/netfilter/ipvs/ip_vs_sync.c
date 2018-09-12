@@ -170,6 +170,11 @@ struct ip_vs_sync_v6 {
 	/* PE data padded to 32bit alignment after seq. options */
 };
 
+/* --------------------------------------------------------------------------*/
+/**
+ * @Synopsis  同步的信息
+ */
+/* ----------------------------------------------------------------------------*/
 union ip_vs_sync_conn {
 	struct ip_vs_sync_v4	v4;
 	struct ip_vs_sync_v6	v6;
@@ -192,6 +197,11 @@ union ip_vs_sync_conn {
 #define IPVS_OPT_F_PE_NAME	(1 << (IPVS_OPT_PE_NAME-1))
 #define IPVS_OPT_F_PARAM	(1 << (IPVS_OPT_PARAM-1))
 
+/* --------------------------------------------------------------------------*/
+/**
+ * @Synopsis  线程同步数据
+ */
+/* ----------------------------------------------------------------------------*/
 struct ip_vs_sync_thread_data {
 	struct net *net;
 	struct socket *sock;
@@ -242,6 +252,11 @@ struct ip_vs_sync_thread_data {
 #define SYNC_MESG_HEADER_LEN	4
 #define MAX_CONNS_PER_SYNCBUFF	255 /* nr_conns in ip_vs_sync_mesg is 8 bit */
 
+/* --------------------------------------------------------------------------*/
+/**
+ * @Synopsis  ipvs sync 消息结构
+ */
+/* ----------------------------------------------------------------------------*/
 /* Version 0 header */
 struct ip_vs_sync_mesg_v0 {
 	__u8                    nr_conns;
@@ -262,6 +277,13 @@ struct ip_vs_sync_mesg {
 	/* ip_vs_sync_conn entries start here */
 };
 
+/* --------------------------------------------------------------------------*/
+/**
+ * @Synopsis  session 同步消息
+ *            相同的头部，里面包含多条消息，
+ *            消息以四字节对齐
+ */
+/* ----------------------------------------------------------------------------*/
 struct ip_vs_sync_buff {
 	struct list_head        list;
 	unsigned long           firstuse;
@@ -294,11 +316,28 @@ static void hton_seq(struct ip_vs_seq *ho, struct ip_vs_seq *no)
 	put_unaligned_be32(ho->previous_delta, &no->previous_delta);
 }
 
+
+
+/* --------------------------------------------------------------------------*/
+/**
+ * @Synopsis  从队列中获取同步消息
+ *
+ * @Param ipvs
+ * @Param ms
+ *
+ * @Returns   
+ */
+/* ----------------------------------------------------------------------------*/
 static inline struct ip_vs_sync_buff *
 sb_dequeue(struct netns_ipvs *ipvs, struct ipvs_master_sync_state *ms)
 {
 	struct ip_vs_sync_buff *sb;
 
+
+    //同步队列？用于保存同步消息
+    //同步消息存储在sync_buf中，starte用链表保存
+    //每次从链表中取出一个数据，用于发送
+    //delay Len用于表示队列中未发送的数据长度
 	spin_lock_bh(&ipvs->sync_lock);
 	if (list_empty(&ms->sync_queue)) {
 		sb = NULL;
@@ -308,6 +347,8 @@ sb_dequeue(struct netns_ipvs *ipvs, struct ipvs_master_sync_state *ms)
 				list);
 		list_del(&sb->list);
 		ms->sync_queue_len--;
+        
+        //队列长度为0
 		if (!ms->sync_queue_len)
 			ms->sync_queue_delay = 0;
 	}
@@ -318,6 +359,15 @@ sb_dequeue(struct netns_ipvs *ipvs, struct ipvs_master_sync_state *ms)
 
 /*
  * Create a new sync buffer for Version 1 proto.
+ /* --------------------------------------------------------------------------*/
+/**
+ * @Synopsis  创建同步消息
+ *
+ * @Param ipvs
+ *
+ * @Returns   
+ */
+/* ----------------------------------------------------------------------------*/
  */
 static inline struct ip_vs_sync_buff *
 ip_vs_sync_buff_create(struct netns_ipvs *ipvs)
@@ -338,6 +388,7 @@ ip_vs_sync_buff_create(struct netns_ipvs *ipvs)
 	sb->mesg->size = htons(sizeof(struct ip_vs_sync_mesg));
 	sb->mesg->nr_conns = 0;
 	sb->mesg->spare = 0;
+    //数据部分指针初始化
 	sb->head = (unsigned char *)sb->mesg + sizeof(struct ip_vs_sync_mesg);
 	sb->end = (unsigned char *)sb->mesg + ipvs->send_mesg_maxlen;
 
@@ -351,6 +402,14 @@ static inline void ip_vs_sync_buff_release(struct ip_vs_sync_buff *sb)
 	kfree(sb);
 }
 
+/* --------------------------------------------------------------------------*/
+/**
+ * @Synopsis  把同步消息添加到master同步信息队列中
+ *
+ * @Param ipvs
+ * @Param ms
+ */
+/* ----------------------------------------------------------------------------*/
 static inline void sb_queue_tail(struct netns_ipvs *ipvs,
 				 struct ipvs_master_sync_state *ms)
 {
@@ -359,11 +418,17 @@ static inline void sb_queue_tail(struct netns_ipvs *ipvs,
 	spin_lock(&ipvs->sync_lock);
 	if (ipvs->sync_state & IP_VS_STATE_MASTER &&
 	    ms->sync_queue_len < sysctl_sync_qlen_max(ipvs)) {
+        //队列长度为空
 		if (!ms->sync_queue_len)
 			schedule_delayed_work(&ms->master_wakeup_work,
 					      max(IPVS_SYNC_SEND_DELAY, 1));
 		ms->sync_queue_len++;
+
+        //add sync info to queue 
+        //添加到master的同步任务信息队列中
 		list_add_tail(&sb->list, &ms->sync_queue);
+        
+        //判断等待队列，唤醒mater线程
 		if ((++ms->sync_queue_delay) == IPVS_SYNC_WAKEUP_RATE)
 			wake_up_process(ms->master_thread);
 	} else
@@ -375,6 +440,18 @@ static inline void sb_queue_tail(struct netns_ipvs *ipvs,
  *	Get the current sync buffer if it has been created for more
  *	than the specified time or the specified time is zero.
  */
+
+/* --------------------------------------------------------------------------*/
+/**
+ * @Synopsis  
+ *
+ * @Param ipvs
+ * @Param ms
+ * @Param time
+ *
+ * @Returns   
+ */
+/* ----------------------------------------------------------------------------*/
 static inline struct ip_vs_sync_buff *
 get_curr_sync_buff(struct netns_ipvs *ipvs, struct ipvs_master_sync_state *ms,
 		   unsigned long time)
@@ -383,6 +460,7 @@ get_curr_sync_buff(struct netns_ipvs *ipvs, struct ipvs_master_sync_state *ms,
 
 	spin_lock_bh(&ipvs->sync_buff_lock);
 	sb = ms->sync_buff;
+    //???
 	if (sb && time_after_eq(jiffies - sb->firstuse, time)) {
 		ms->sync_buff = NULL;
 		__set_current_state(TASK_RUNNING);
@@ -427,18 +505,56 @@ ip_vs_sync_buff_create_v0(struct netns_ipvs *ipvs)
 
 /* Check if conn should be synced.
  * pkts: conn packets, use sysctl_sync_threshold to avoid packet check
+ *
  * - (1) sync_refresh_period: reduce sync rate. Additionally, retry
  *	sync_retries times with period of sync_refresh_period/8
  * - (2) if both sync_refresh_period and sync_period are 0 send sync only
  *	for state changes or only once when pkts matches sync_threshold
  * - (3) templates: rate can be reduced only with sync_refresh_period or
  *	with (2)
+ *  减少同步速率，
+ * 同步阀值
+    sync_threshold
+    sync_threshold - vector of 2 INTEGERs: sync_threshold, sync_period
+	default 3 50
+    同步阀指：长度为2的int数组
+    同步阈值设置，该文件中的值为两个整数，默认为3 50
+    数值表示含义如下（以3 50为例）：接受到3个数据包及以上，该连接就可以被同步
+
+	It sets synchronization threshold, which is the minimum number
+	of incoming packets that a connection needs to receive before
+	the connection will be synchronized.
+    如果设置同步门槛，接收数据包的数量达到阀值，将进行链接信息同步。
+    A connection will be synchronized, every time the number of its incoming packets
+	modulus sync_period equals the threshold. The range of the
+	threshold is from 0 to sync_period.
+    当接收的数据包的sync_period与阀指相等，信息将被同步。
+
+	When sync_period and sync_refresh_period are 0, send sync only
+	for state changes or only once when pkts matches sync_threshold
+
+    当sync_period 和sync_refresh_period设置为0， 仅当状态改变或者数据包量达到阀指的时候
+    才进行同步。
+ *
+ /* --------------------------------------------------------------------------*/
+/**
+ * @Synopsis  判断链接是否需要同步
+ *
+ * @Param ipvs
+ * @Param cp
+ * @Param pkts
+ *
+ * @Returns   
+ */
+/* ----------------------------------------------------------------------------*/
  */
 static int ip_vs_sync_conn_needed(struct netns_ipvs *ipvs,
 				  struct ip_vs_conn *cp, int pkts)
 {
+    //链接同步的最后的时间
 	unsigned long orig = ACCESS_ONCE(cp->sync_endtime);
 	unsigned long now = jiffies;
+    //链接超时的时间
 	unsigned long n = (now + cp->timeout) & ~3UL;
 	unsigned int sync_refresh_period;
 	int sync_period;
@@ -448,6 +564,7 @@ static int ip_vs_sync_conn_needed(struct netns_ipvs *ipvs,
 	if (unlikely(cp->flags & IP_VS_CONN_F_TEMPLATE))
 		force = 0;
 	else if (likely(cp->protocol == IPPROTO_TCP)) {
+        //tcp 状态检查，如果不处于当前的状态，则不需要同步
 		if (!((1 << cp->state) &
 		      ((1 << IP_VS_TCP_S_ESTABLISHED) |
 		       (1 << IP_VS_TCP_S_FIN_WAIT) |
@@ -455,7 +572,10 @@ static int ip_vs_sync_conn_needed(struct netns_ipvs *ipvs,
 		       (1 << IP_VS_TCP_S_CLOSE_WAIT) |
 		       (1 << IP_VS_TCP_S_TIME_WAIT))))
 			return 0;
+        //判断状态是否改变
 		force = cp->state != cp->old_state;
+        //新建立链接就强制刷新
+        //状态改变但不是链接建立，不强制刷新
 		if (force && cp->state != IP_VS_TCP_S_ESTABLISHED)
 			goto set;
 	} else if (unlikely(cp->protocol == IPPROTO_SCTP)) {
@@ -473,6 +593,7 @@ static int ip_vs_sync_conn_needed(struct netns_ipvs *ipvs,
 		force = 0;
 	}
 
+    //同步刷新时间间隔
 	sync_refresh_period = sysctl_sync_refresh_period(ipvs);
 	if (sync_refresh_period > 0) {
 		long diff = n - orig;
@@ -494,6 +615,7 @@ static int ip_vs_sync_conn_needed(struct netns_ipvs *ipvs,
 	}
 	sync_period = sysctl_sync_period(ipvs);
 	if (sync_period > 0) {
+        //设置同步时间
 		if (!(cp->flags & IP_VS_CONN_F_TEMPLATE) &&
 		    pkts % sync_period != sysctl_sync_threshold(ipvs))
 			return 0;
@@ -503,7 +625,11 @@ static int ip_vs_sync_conn_needed(struct netns_ipvs *ipvs,
 
 set:
 	cp->old_state = cp->state;
+    //比较时间，
+    //orig和n相等，设置endtime为n，返回orig
+    //不想等，返回sync_endtime
 	n = cmpxchg(&cp->sync_endtime, orig, n);
+    //没有达到超时时间就刷新
 	return n == orig || force;
 }
 
@@ -537,6 +663,7 @@ static void ip_vs_sync_conn_v0(struct net *net, struct ip_vs_conn *cp,
 		return;
 	}
 
+    //选择master
 	id = select_master_thread_id(ipvs, cp);
 	ms = &ipvs->ms[id];
 	buff = ms->sync_buff;
@@ -608,12 +735,26 @@ static void ip_vs_sync_conn_v0(struct net *net, struct ip_vs_conn *cp,
  *      Called by ip_vs_in.
  *      Sending Version 1 messages
  */
+
+/* --------------------------------------------------------------------------*/
+/**
+ * @Synopsis  根据链接信息，插入同步buf中
+ *
+ * @Param net 网络命名空间， 根据命名空间得到ipvs 
+ * @Param cp  链接信息
+ * @Param pkts
+ */
+/* ----------------------------------------------------------------------------*/
 void ip_vs_sync_conn(struct net *net, struct ip_vs_conn *cp, int pkts)
 {
 	struct netns_ipvs *ipvs = net_ipvs(net);
+    //头部信息
 	struct ip_vs_sync_mesg *m;
+    //链接信息
 	union ip_vs_sync_conn *s;
+    // 存储空间
 	struct ip_vs_sync_buff *buff;
+    //master状态
 	struct ipvs_master_sync_state *ms;
 	int id;
 	__u8 *p;
@@ -621,17 +762,21 @@ void ip_vs_sync_conn(struct net *net, struct ip_vs_conn *cp, int pkts)
 
 	/* Handle old version of the protocol */
 	if (sysctl_sync_ver(ipvs) == 0) {
+        //0版本的信息填充
 		ip_vs_sync_conn_v0(net, cp, pkts);
 		return;
 	}
+    //单包模式，信息不同步
 	/* Do not sync ONE PACKET */
 	if (cp->flags & IP_VS_CONN_F_ONE_PACKET)
 		goto control;
 sloop:
+    //判断信息是否需要同步
 	if (!ip_vs_sync_conn_needed(ipvs, cp, pkts))
 		goto control;
 
 	/* Sanity checks */
+    //额外信息检查
 	pe_name_len = 0;
 	if (cp->pe_data_len) {
 		if (!cp->pe_data || !cp->dest) {
@@ -642,13 +787,20 @@ sloop:
 	}
 
 	spin_lock_bh(&ipvs->sync_buff_lock);
+    //不是mater不需要，保存同步信息,直接返回
 	if (!(ipvs->sync_state & IP_VS_STATE_MASTER)) {
 		spin_unlock_bh(&ipvs->sync_buff_lock);
 		return;
 	}
 
+    //选择master
+    //同一个主机，可以有多个master。横向扩展
 	id = select_master_thread_id(ipvs, cp);
 	ms = &ipvs->ms[id];
+
+
+
+    /*计算数据长度*/
 
 #ifdef CONFIG_IP_VS_IPV6
 	if (cp->af == AF_INET6)
@@ -657,6 +809,7 @@ sloop:
 #endif
 		len = sizeof(struct ip_vs_sync_v4);
 
+    //sequence mask
 	if (cp->flags & IP_VS_CONN_F_SEQ_MASK)
 		len += sizeof(struct ip_vs_sync_conn_options) + 2;
 
@@ -669,9 +822,12 @@ sloop:
 	pad = 0;
 	buff = ms->sync_buff;
 	if (buff) {
+        //m为消息的头部
 		m = buff->mesg;
+        //四字节对齐
 		pad = (4 - (size_t) buff->head) & 3;
 		/* Send buffer if it is for v0 */
+        //数据长度太长，添加到队列
 		if (buff->head + len + pad > buff->end || m->reserved) {
 			sb_queue_tail(ipvs, ms);
 			ms->sync_buff = NULL;
@@ -680,26 +836,33 @@ sloop:
 		}
 	}
 
+
+    //信息存储空间为空，创建新的存储空间，并初始化
 	if (!buff) {
+        //创建消息同步buf
 		buff = ip_vs_sync_buff_create(ipvs);
 		if (!buff) {
 			spin_unlock_bh(&ipvs->sync_buff_lock);
 			pr_err("ip_vs_sync_buff_create failed.\n");
 			return;
 		}
+        //指定mstaus buf
 		ms->sync_buff = buff;
 		m = buff->mesg;
 	}
 
+    //获取信息的头部地址
 	p = buff->head;
 	buff->head += pad + len;
+    //设置头部长度
 	m->size = htons(ntohs(m->size) + pad + len);
 	/* Add ev. padding from prev. sync_conn */
 	while (pad--)
 		*(p++) = 0;
-
+    //链接信息分为ipv4和6两个版本，前面信息相同，后面的地址不同
 	s = (union ip_vs_sync_conn *)p;
 
+    /*设置同步信息内容*/
 	/* Set message type  & copy members */
 	s->v4.type = (cp->af == AF_INET6 ? STYPE_F_INET6 : 0);
 	s->v4.ver_size = htons(len & SVER_MASK);	/* Version 0 */
@@ -711,6 +874,7 @@ sloop:
 	s->v4.dport = cp->dport;
 	s->v4.fwmark = htonl(cp->fwmark);
 	s->v4.timeout = htonl(cp->timeout / HZ);
+    //更新链接的个数
 	m->nr_conns++;
 
 #ifdef CONFIG_IP_VS_IPV6
@@ -727,6 +891,7 @@ sloop:
 		s->v4.vaddr = cp->vaddr.ip;
 		s->v4.daddr = cp->daddr.ip;
 	}
+    //设置数据包的序列号
 	if (cp->flags & IP_VS_CONN_F_SEQ_MASK) {
 		*(p++) = IPVS_OPT_SEQ_DATA;
 		*(p++) = sizeof(struct ip_vs_sync_conn_options);
@@ -735,6 +900,9 @@ sloop:
 		hton_seq((struct ip_vs_seq *)p, &cp->out_seq);
 		p += sizeof(struct ip_vs_seq);
 	}
+
+
+    //添加pdata信息
 	/* Handle pe data */
 	if (cp->pe_data_len && cp->pe_data) {
 		*(p++) = IPVS_OPT_PE_DATA;
@@ -754,6 +922,7 @@ sloop:
 
 control:
 	/* synchronize its controller if it has */
+    //同步控制器信息
 	cp = cp->control;
 	if (!cp)
 		return;
@@ -1163,10 +1332,21 @@ out:
  *      ip_vs_conn entries.
  *      Handles Version 0 & 1
  */
+
+/* --------------------------------------------------------------------------*/
+/**
+ * @Synopsis  解析收到的组播消息，创建ip_vs_conn 链接结构
+ *
+ * @Param net
+ * @Param buffer
+ * @Param buflen
+ */
+/* ----------------------------------------------------------------------------*/
 static void ip_vs_process_message(struct net *net, __u8 *buffer,
 				  const size_t buflen)
 {
 	struct netns_ipvs *ipvs = net_ipvs(net);
+    //get message
 	struct ip_vs_sync_mesg *m2 = (struct ip_vs_sync_mesg *)buffer;
 	__u8 *p, *msg_end;
 	int i, nr_conns;
@@ -1176,6 +1356,7 @@ static void ip_vs_process_message(struct net *net, __u8 *buffer,
 		return;
 	}
 
+    // change len
 	if (buflen != ntohs(m2->size)) {
 		IP_VS_DBG(2, "BACKUP, bogus message size\n");
 		return;
@@ -1190,6 +1371,8 @@ static void ip_vs_process_message(struct net *net, __u8 *buffer,
 	    && (m2->spare == 0)) {
 
 		msg_end = buffer + sizeof(struct ip_vs_sync_mesg);
+
+        //链接的数目
 		nr_conns = m2->nr_conns;
 
 		for (i=0; i<nr_conns; i++) {
@@ -1590,12 +1773,23 @@ static void master_wakeup_work_handler(struct work_struct *work)
 	spin_unlock_bh(&ipvs->sync_lock);
 }
 
+/* --------------------------------------------------------------------------*/
+/**
+ * @Synopsis  收集sync信息
+ *
+ * @Param ipvs
+ * @Param ms
+ *
+ * @Returns   
+ */
+/* ----------------------------------------------------------------------------*/
 /* Get next buffer to send */
 static inline struct ip_vs_sync_buff *
 next_sync_buff(struct netns_ipvs *ipvs, struct ipvs_master_sync_state *ms)
 {
 	struct ip_vs_sync_buff *sb;
 
+    //get all connect in list
 	sb = sb_dequeue(ipvs, ms);
 	if (sb)
 		return sb;
@@ -1603,6 +1797,16 @@ next_sync_buff(struct netns_ipvs *ipvs, struct ipvs_master_sync_state *ms)
 	return get_curr_sync_buff(ipvs, ms, IPVS_SYNC_FLUSH_TIME);
 }
 
+
+/* --------------------------------------------------------------------------*/
+/**
+ * @Synopsis  master 角色的线程处理函数
+ *
+ * @Param data
+ *
+ * @Returns   
+ */
+/* ----------------------------------------------------------------------------*/
 static int sync_thread_master(void *data)
 {
 	struct ip_vs_sync_thread_data *tinfo = data;
@@ -1616,13 +1820,17 @@ static int sync_thread_master(void *data)
 		ipvs->master_mcast_ifn, ipvs->master_syncid, tinfo->id);
 
 	for (;;) {
+        //get sync info
 		sb = next_sync_buff(ipvs, ms);
 		if (unlikely(kthread_should_stop()))
 			break;
+
+        //没有数据，等待下次
 		if (!sb) {
 			schedule_timeout(IPVS_SYNC_CHECK_PERIOD);
 			continue;
 		}
+        //send until success
 		while (ip_vs_send_sync_msg(tinfo->sock, sb->mesg) < 0) {
 			int ret = 0;
 
@@ -1633,6 +1841,7 @@ static int sync_thread_master(void *data)
 			if (unlikely(kthread_should_stop()))
 				goto done;
 		}
+        //free buf
 		ip_vs_sync_buff_release(sb);
 	}
 
@@ -1659,6 +1868,15 @@ done:
 }
 
 
+/* --------------------------------------------------------------------------*/
+/**
+ * @Synopsis  backup thread for sync thread
+ *
+ * @Param data 外部传递的参数 net， buf， 。。。
+ *
+ * @Returns   
+ */
+/* ----------------------------------------------------------------------------*/
 static int sync_thread_backup(void *data)
 {
 	struct ip_vs_sync_thread_data *tinfo = data;
@@ -1675,6 +1893,7 @@ static int sync_thread_backup(void *data)
 			 || kthread_should_stop());
 
 		/* do we have data now? */
+        //sk receive queue is not empty , recv msg
 		while (!skb_queue_empty(&(tinfo->sock->sk->sk_receive_queue))) {
 			len = ip_vs_receive(tinfo->sock, tinfo->buf,
 					ipvs->recv_mesg_maxlen);
@@ -1684,6 +1903,7 @@ static int sync_thread_backup(void *data)
 				break;
 			}
 
+            //*** process message
 			ip_vs_process_message(tinfo->net, tinfo->buf, len);
 		}
 	}
@@ -1697,11 +1917,24 @@ static int sync_thread_backup(void *data)
 }
 
 
+/* --------------------------------------------------------------------------*/
+/**
+ * @Synopsis  
+ *
+ * @Param net
+ * @Param state   lvs节点的角色， master backend
+ * @Param mcast_ifn
+ * @Param syncid
+ *
+ * @Returns   
+ */
+/* ----------------------------------------------------------------------------*/
 int start_sync_thread(struct net *net, int state, char *mcast_ifn, __u8 syncid)
 {
 	struct ip_vs_sync_thread_data *tinfo;
 	struct task_struct **array = NULL, *task;
 	struct socket *sock;
+    //ipvs 和网卡相关？
 	struct netns_ipvs *ipvs = net_ipvs(net);
 	char *name;
 	int (*threadfn)(void *data);
@@ -1712,22 +1945,29 @@ int start_sync_thread(struct net *net, int state, char *mcast_ifn, __u8 syncid)
 	IP_VS_DBG(7, "Each ip_vs_sync_conn entry needs %Zd bytes\n",
 		  sizeof(struct ip_vs_sync_conn_v0));
 
+
+    //统计同步状态
 	if (!ipvs->sync_state) {
 		count = clamp(sysctl_sync_ports(ipvs), 1, IPVS_SYNC_PORTS_MAX);
 		ipvs->threads_mask = count - 1;
 	} else
 		count = ipvs->threads_mask + 1;
 
+    //根据角色，设置线程属性
 	if (state == IP_VS_STATE_MASTER) {
+        //master state exist, exit
 		if (ipvs->ms)
 			return -EEXIST;
 
+        //网络接口设置
 		strlcpy(ipvs->master_mcast_ifn, mcast_ifn,
 			sizeof(ipvs->master_mcast_ifn));
+        //id 设置
 		ipvs->master_syncid = syncid;
 		name = "ipvs-m:%d:%d";
 		threadfn = sync_thread_master;
 	} else if (state == IP_VS_STATE_BACKUP) {
+        //set backup attributes
 		if (ipvs->backup_threads)
 			return -EEXIST;
 
@@ -1740,6 +1980,12 @@ int start_sync_thread(struct net *net, int state, char *mcast_ifn, __u8 syncid)
 		return -EINVAL;
 	}
 
+    /*创建master和backend的表示结构
+     *
+     * master创建msstate, sync queue
+     * backerend创建task_struct
+     *
+     * */
 	if (state == IP_VS_STATE_MASTER) {
 		struct ipvs_master_sync_state *ms;
 
@@ -1747,6 +1993,9 @@ int start_sync_thread(struct net *net, int state, char *mcast_ifn, __u8 syncid)
 		if (!ipvs->ms)
 			goto out;
 		ms = ipvs->ms;
+
+
+        //init sync queue
 		for (id = 0; id < count; id++, ms++) {
 			INIT_LIST_HEAD(&ms->sync_queue);
 			ms->sync_queue_len = 0;
@@ -1764,6 +2013,7 @@ int start_sync_thread(struct net *net, int state, char *mcast_ifn, __u8 syncid)
 	set_sync_mesg_maxlen(net, state);
 
 	tinfo = NULL;
+    //根据角色 创建socket 并创建线程
 	for (id = 0; id < count; id++) {
 		if (state == IP_VS_STATE_MASTER)
 			sock = make_send_sock(net, id);
@@ -1773,11 +2023,15 @@ int start_sync_thread(struct net *net, int state, char *mcast_ifn, __u8 syncid)
 			result = PTR_ERR(sock);
 			goto outtinfo;
 		}
+
+        //create task info
 		tinfo = kmalloc(sizeof(*tinfo), GFP_KERNEL);
 		if (!tinfo)
 			goto outsocket;
 		tinfo->net = net;
 		tinfo->sock = sock;
+
+        //backend create buf
 		if (state == IP_VS_STATE_BACKUP) {
 			tinfo->buf = kmalloc(ipvs->recv_mesg_maxlen,
 					     GFP_KERNEL);

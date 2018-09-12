@@ -115,6 +115,16 @@ static unsigned int ip_vs_conn_hashkey(struct net *net, int af, unsigned int pro
 		((size_t)net>>8)) & ip_vs_conn_tab_mask;
 }
 
+/* --------------------------------------------------------------------------*/
+/**
+ * @Synopsis  根据parm计算hash
+ *
+ * @Param p
+ * @Param inverse
+ *
+ * @Returns   
+ */
+/* ----------------------------------------------------------------------------*/
 static unsigned int ip_vs_conn_hashkey_param(const struct ip_vs_conn_param *p,
 					     bool inverse)
 {
@@ -254,12 +264,23 @@ static inline bool ip_vs_conn_unlink(struct ip_vs_conn *cp)
  *	p->caddr, p->cport: pkt source address (foreign host)
  *	p->vaddr, p->vport: pkt dest address (load balancer)
  */
+
+/* --------------------------------------------------------------------------*/
+/**
+ * @Synopsis  查找链接
+ *
+ * @Param p
+ *
+ * @Returns   
+ */
+/* ----------------------------------------------------------------------------*/
 static inline struct ip_vs_conn *
 __ip_vs_conn_in_get(const struct ip_vs_conn_param *p)
 {
 	unsigned int hash;
 	struct ip_vs_conn *cp;
 
+    //计算hash
 	hash = ip_vs_conn_hashkey_param(p, false);
 
 	rcu_read_lock();
@@ -272,6 +293,7 @@ __ip_vs_conn_in_get(const struct ip_vs_conn_param *p)
 		    ((!p->cport) ^ (!(cp->flags & IP_VS_CONN_F_NO_CPORT))) &&
 		    p->protocol == cp->protocol &&
 		    ip_vs_conn_net_eq(cp, p->net)) {
+            //增加计数
 			if (!__ip_vs_conn_get(cp))
 				continue;
 			/* HIT */
@@ -285,6 +307,15 @@ __ip_vs_conn_in_get(const struct ip_vs_conn_param *p)
 	return NULL;
 }
 
+/* --------------------------------------------------------------------------*/
+/**
+ * @Synopsis  根据param查找链接
+ *
+ * @Param p
+ *
+ * @Returns   
+ */
+/* ----------------------------------------------------------------------------*/
 struct ip_vs_conn *ip_vs_conn_in_get(const struct ip_vs_conn_param *p)
 {
 	struct ip_vs_conn *cp;
@@ -305,6 +336,19 @@ struct ip_vs_conn *ip_vs_conn_in_get(const struct ip_vs_conn_param *p)
 	return cp;
 }
 
+/* --------------------------------------------------------------------------*/
+/**
+ * @Synopsis 根据skb解析出五元组，构造conn_param实例 
+ *
+ * @Param af
+ * @Param skb
+ * @Param iph
+ * @Param inverse
+ * @Param p
+ *
+ * @Returns   
+ */
+/* ----------------------------------------------------------------------------*/
 static int
 ip_vs_conn_fill_param_proto(int af, const struct sk_buff *skb,
 			    const struct ip_vs_iphdr *iph,
@@ -326,6 +370,18 @@ ip_vs_conn_fill_param_proto(int af, const struct sk_buff *skb,
 	return 0;
 }
 
+/* --------------------------------------------------------------------------*/
+/**
+ * @Synopsis 根据协议查找链接信息 
+ *
+ * @Param af
+ * @Param skb
+ * @Param iph
+ * @Param inverse
+ *
+ * @Returns   
+ */
+/* ----------------------------------------------------------------------------*/
 struct ip_vs_conn *
 ip_vs_conn_in_get_proto(int af, const struct sk_buff *skb,
 			const struct ip_vs_iphdr *iph, int inverse)
@@ -335,6 +391,7 @@ ip_vs_conn_in_get_proto(int af, const struct sk_buff *skb,
 	if (ip_vs_conn_fill_param_proto(af, skb, iph, inverse, &p))
 		return NULL;
 
+    //根据param查找链接
 	return ip_vs_conn_in_get(&p);
 }
 EXPORT_SYMBOL_GPL(ip_vs_conn_in_get_proto);
@@ -446,6 +503,14 @@ EXPORT_SYMBOL_GPL(ip_vs_conn_out_get_proto);
 /*
  *      Put back the conn and restart its timer with its timeout
  */
+
+/* --------------------------------------------------------------------------*/
+/**
+ * @Synopsis 放回链接，重新设置超时时间 
+ *
+ * @Param cp
+ */
+/* ----------------------------------------------------------------------------*/
 void ip_vs_conn_put(struct ip_vs_conn *cp)
 {
 	unsigned long t = (cp->flags & IP_VS_CONN_F_ONE_PACKET) ?
@@ -476,6 +541,13 @@ void ip_vs_conn_fill_cport(struct ip_vs_conn *cp, __be16 cport)
 }
 
 
+/* --------------------------------------------------------------------------*/
+/**
+ * @Synopsis  链接指定发送的函数
+ *
+ * @Param cp
+ */
+/* ----------------------------------------------------------------------------*/
 /*
  *	Bind a connection entry with the corresponding packet_xmit.
  *	Called by ip_vs_conn_new.
@@ -775,6 +847,13 @@ static void ip_vs_conn_rcu_free(struct rcu_head *head)
 	kmem_cache_free(ip_vs_conn_cachep, cp);
 }
 
+/* --------------------------------------------------------------------------*/
+/**
+ * @Synopsis  链接超时处理函数,从模版中删除conn
+ *
+ * @Param data  链接的结构表示
+ */
+/* ----------------------------------------------------------------------------*/
 static void ip_vs_conn_expire(unsigned long data)
 {
 	struct ip_vs_conn *cp = (struct ip_vs_conn *)data;
@@ -784,6 +863,7 @@ static void ip_vs_conn_expire(unsigned long data)
 	/*
 	 *	do I control anybody?
 	 */
+    //计算控制器的个数
 	if (atomic_read(&cp->n_control))
 		goto expire_later;
 
@@ -813,6 +893,7 @@ static void ip_vs_conn_expire(unsigned long data)
 		if (cp->flags & IP_VS_CONN_F_NO_CPORT)
 			atomic_dec(&ip_vs_conn_no_cport_cnt);
 		call_rcu(&cp->rcu_head, ip_vs_conn_rcu_free);
+        //减少ipvs的链接数
 		atomic_dec(&ipvs->conn_count);
 		return;
 	}
@@ -825,6 +906,7 @@ static void ip_vs_conn_expire(unsigned long data)
 	atomic_inc(&cp->refcnt);
 	cp->timeout = 60*HZ;
 
+    //超时时间到了，但是链接还存活，也要更新同步状态
 	if (ipvs->sync_state & IP_VS_STATE_MASTER)
 		ip_vs_sync_conn(net, cp, sysctl_sync_threshold(ipvs));
 
@@ -848,6 +930,21 @@ void ip_vs_conn_expire_now(struct ip_vs_conn *cp)
 /*
  *	Create a new connection entry and hash it into the ip_vs_conn_tab
  */
+
+/* --------------------------------------------------------------------------*/
+/**
+ * @Synopsis  创建新的链接结构, 和模版结构关联
+ *
+ * @Param p
+ * @Param daddr
+ * @Param dport
+ * @Param flags
+ * @Param dest
+ * @Param fwmark
+ *
+ * @Returns   
+ */
+/* ----------------------------------------------------------------------------*/
 struct ip_vs_conn *
 ip_vs_conn_new(const struct ip_vs_conn_param *p,
 	       const union nf_inet_addr *daddr, __be16 dport, unsigned int flags,
@@ -865,6 +962,8 @@ ip_vs_conn_new(const struct ip_vs_conn_param *p,
 	}
 
 	INIT_HLIST_NODE(&cp->c_list);
+
+    //创建定时器，设置超时的时间
 	setup_timer(&cp->timer, ip_vs_conn_expire, (unsigned long)cp);
 	ip_vs_conn_net_set(cp, p->net);
 	cp->af		   = p->af;
@@ -879,6 +978,7 @@ ip_vs_conn_new(const struct ip_vs_conn_param *p,
 	cp->dport          = dport;
 	cp->flags	   = flags;
 	cp->fwmark         = fwmark;
+    //模版未链接
 	if (flags & IP_VS_CONN_F_TEMPLATE && p->pe) {
 		ip_vs_pe_get(p->pe);
 		cp->pe = p->pe;
@@ -1090,6 +1190,11 @@ static int ip_vs_conn_open(struct inode *inode, struct file *file)
 			    sizeof(struct ip_vs_iter_state));
 }
 
+/* --------------------------------------------------------------------------*/
+/**
+ * @Synopsis  connect 文件操作
+ */
+/* ----------------------------------------------------------------------------*/
 static const struct file_operations ip_vs_conn_fops = {
 	.owner	 = THIS_MODULE,
 	.open    = ip_vs_conn_open,

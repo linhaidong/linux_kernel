@@ -108,6 +108,14 @@ void ip_vs_init_hash_table(struct list_head *table, int rows)
 		INIT_LIST_HEAD(&table[rows]);
 }
 
+/* --------------------------------------------------------------------------*/
+/**
+ * @Synopsis  ipvs 状态统计
+ *
+ * @Param cp
+ * @Param skb
+ */
+/* ----------------------------------------------------------------------------*/
 static inline void
 ip_vs_in_stats(struct ip_vs_conn *cp, struct sk_buff *skb)
 {
@@ -185,6 +193,16 @@ ip_vs_conn_stats(struct ip_vs_conn *cp, struct ip_vs_service *svc)
 }
 
 
+/* --------------------------------------------------------------------------*/
+/**
+ * @Synopsis  根据协议，更新链接的状态信息
+ *
+ * @Param cp
+ * @Param direction
+ * @Param skb
+ * @Param pd
+ */
+/* ----------------------------------------------------------------------------*/
 static inline void
 ip_vs_set_state(struct ip_vs_conn *cp, int direction,
 		const struct sk_buff *skb,
@@ -217,6 +235,22 @@ ip_vs_conn_fill_param_persist(const struct ip_vs_service *svc,
  *  Locking: we are svc user (svc->refcnt), so we hold all dests too
  *  Protocols supported: TCP, UDP
  */
+/* --------------------------------------------------------------------------*/
+/**
+ * @Synopsis  ipvs 调度前的功能函数
+ *            模版存在，就根据模版创建链接
+ *            或者选择一个server创建链接，并创建模版
+ *
+ * @Param svc
+ * @Param skb
+ * @Param src_port
+ * @Param dst_port
+ * @Param ignored
+ * @Param iph
+ *
+ * @Returns   
+ */
+/* ----------------------------------------------------------------------------*/
 static struct ip_vs_conn *
 ip_vs_sched_persist(struct ip_vs_service *svc,
 		    struct sk_buff *skb, __be16 src_port, __be16 dst_port,
@@ -388,6 +422,21 @@ ip_vs_sched_persist(struct ip_vs_service *svc,
  *       or pe_data. In this case we should return NF_DROP without
  *       any attempts to send ICMP with ip_vs_leave.
  */
+
+/* --------------------------------------------------------------------------*/
+/**
+ * @Synopsis  ipvs主要的调度函数
+ *            根据服务了选择server并创建链接
+ *
+ * @Param svc
+ * @Param skb
+ * @Param pd
+ * @Param ignored
+ * @Param iph
+ *
+ * @Returns   
+ */
+/* ----------------------------------------------------------------------------*/
 struct ip_vs_conn *
 ip_vs_schedule(struct ip_vs_service *svc, struct sk_buff *skb,
 	       struct ip_vs_proto_data *pd, int *ignored,
@@ -1592,6 +1641,8 @@ ip_vs_in(unsigned int hooknum, struct sk_buff *skb, int af)
 	if (unlikely(sysctl_backup_only(ipvs) || !ipvs->enable))
 		return NF_ACCEPT;
 
+
+    //从skb得到ipvs header
 	ip_vs_fill_iph_skb(af, skb, &iph);
 
 	/* Bad... Do not break raw sockets */
@@ -1630,19 +1681,26 @@ ip_vs_in(unsigned int hooknum, struct sk_buff *skb, int af)
 				return verdict;
 		}
 
+    /*  处理协议
+     * */
 	/* Protocol supported? */
 	pd = ip_vs_proto_data_get(net, iph.protocol);
 	if (unlikely(!pd))
 		return NF_ACCEPT;
 	pp = pd->pp;
+
+
+    //查找链接
 	/*
 	 * Check if the packet belongs to an existing connection entry
 	 */
 	cp = pp->conn_in_get(af, skb, &iph, 0);
 
+    //计算链接是否超时
 	if (unlikely(sysctl_expire_nodest_conn(ipvs)) && cp && cp->dest &&
 	    unlikely(!atomic_read(&cp->dest->weight)) && !iph.fragoffs &&
 	    is_new_conn(skb, &iph)) {
+        //计算超时
 		ip_vs_conn_expire_now(cp);
 		__ip_vs_conn_put(cp);
 		cp = NULL;
@@ -1674,11 +1732,11 @@ ip_vs_in(unsigned int hooknum, struct sk_buff *skb, int af)
 		return NF_ACCEPT;
 	}
 
+    //目的链接不可用
 	IP_VS_DBG_PKT(11, af, pp, skb, 0, "Incoming packet");
 	/* Check the server status */
 	if (cp->dest && !(cp->dest->flags & IP_VS_DEST_F_AVAILABLE)) {
 		/* the destination server is not available */
-
 		if (sysctl_expire_nodest_conn(ipvs)) {
 			/* try to expire the connection immediately */
 			ip_vs_conn_expire_now(cp);
@@ -1689,7 +1747,10 @@ ip_vs_in(unsigned int hooknum, struct sk_buff *skb, int af)
 		return NF_DROP;
 	}
 
+    //状态更新
+    //更新网络流量统计信息
 	ip_vs_in_stats(cp, skb);
+    //更新链接状态信息
 	ip_vs_set_state(cp, IP_VS_DIR_INPUT, skb, pd);
 	if (cp->packet_xmit)
 		ret = cp->packet_xmit(skb, cp, pp, &iph);
@@ -1713,6 +1774,7 @@ ip_vs_in(unsigned int hooknum, struct sk_buff *skb, int af)
 	else
 		pkts = atomic_add_return(1, &cp->in_pkts);
 
+    //状态同步
 	if (ipvs->sync_state & IP_VS_STATE_MASTER)
 		ip_vs_sync_conn(net, cp, pkts);
 
@@ -1724,6 +1786,20 @@ ip_vs_in(unsigned int hooknum, struct sk_buff *skb, int af)
  *	AF_INET handler in NF_INET_LOCAL_IN chain
  *	Schedule and forward packets from remote clients
  */
+
+/* --------------------------------------------------------------------------*/
+/**
+ * @Synopsis  ipvs本地数据包的钩子函数，用于处理进入的数据包
+ *
+ * @Param hooknum
+ * @Param skb
+ * @Param in
+ * @Param out
+ * @Param okfn
+ *
+ * @Returns   
+ */
+/* ----------------------------------------------------------------------------*/
 static unsigned int
 ip_vs_remote_request4(unsigned int hooknum, struct sk_buff *skb,
 		      const struct net_device *in,
