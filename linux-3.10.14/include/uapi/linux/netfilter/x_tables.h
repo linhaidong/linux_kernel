@@ -7,6 +7,7 @@
 #define XT_EXTENSION_MAXNAMELEN 29
 #define XT_TABLE_MAXNAMELEN 32
 
+//mytxt: user and kernel match
 struct xt_entry_match {
 	union {
 		struct {
@@ -34,7 +35,6 @@ struct xt_entry_target {
 	union {
 		struct {
 			__u16 target_size;
-
 			/* Used by userspace */
 			char name[XT_EXTENSION_MAXNAMELEN];
 			__u8 revision;

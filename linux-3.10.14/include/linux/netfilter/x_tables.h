@@ -57,9 +57,11 @@ struct xt_action_param {
 struct xt_mtchk_param {
 	struct net *net;
 	const char *table;
+    //rule data
 	const void *entryinfo;
 	const struct xt_match *match;
 	void *matchinfo;
+    //hook num
 	unsigned int hook_mask;
 	u_int8_t family;
 };
@@ -181,13 +183,16 @@ struct xt_target {
 };
 
 /* Furniture shopping... */
+//存储hook点的属性信息
 struct xt_table {
 	struct list_head list;
 
 	/* What hooks you will enter on */
+    //hook 点的标示位
 	unsigned int valid_hooks;
 
 	/* Man behind the curtain... */
+    //存储规则
 	struct xt_table_info *private;
 
 	/* Set this to THIS_MODULE if you are a module, otherwise NULL */
@@ -209,6 +214,7 @@ struct xt_table_info {
 	/* Number of entries: FIXME. --RR */
 	unsigned int number;
 	/* Initial number of entries. Needed for module usage count */
+    //初始化的entey的个数
 	unsigned int initial_entries;
 
 	/* Entry points and underflows */
@@ -219,11 +225,14 @@ struct xt_table_info {
 	 * Number of user chains. Since tables cannot have loops, at most
 	 * @stacksize jumps (number of user chains) can possibly be made.
 	 */
+    //user chains 的数目
 	unsigned int stacksize;
 	unsigned int __percpu *stackptr;
 	void ***jumpstack;
 	/* ipt_entry tables: one per CPU */
 	/* Note : this field MUST be the last one, see XT_TABLE_INFO_SZ */
+    //指向具体的匹配规则ipt_standard
+    //point to every cpu
 	void *entries[1];
 };
 

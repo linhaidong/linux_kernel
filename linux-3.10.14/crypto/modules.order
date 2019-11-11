@@ -1,7 +1,0 @@
-kernel/crypto/hmac.ko
-kernel/crypto/md5.ko
-kernel/crypto/cbc.ko
-kernel/crypto/des_generic.ko
-kernel/crypto/deflate.ko
-kernel/crypto/authenc.ko
-kernel/crypto/authencesn.ko

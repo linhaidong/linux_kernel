@@ -74,6 +74,7 @@ int nf_register_hook(struct nf_hook_ops *reg)
 	if (err < 0)
 		return err;
 	list_for_each_entry(elem, &nf_hooks[reg->pf][reg->hooknum], list) {
+        //按照优先级，对匹配的函数进行插入操作。
 		if (reg->priority < elem->priority)
 			break;
 	}
@@ -124,6 +125,22 @@ void nf_unregister_hooks(struct nf_hook_ops *reg, unsigned int n)
 }
 EXPORT_SYMBOL(nf_unregister_hooks);
 
+/* --------------------------------------------------------------------------*/
+/**
+ * @Synopsis  
+ *
+ * @Param head
+ * @Param skb
+ * @Param hook
+ * @Param indev
+ * @Param outdev
+ * @Param elemp
+ * @Param okfn
+ * @Param hook_thresh
+ *
+ * @Returns   
+ */
+/* ----------------------------------------------------------------------------*/
 unsigned int nf_iterate(struct list_head *head,
 			struct sk_buff *skb,
 			unsigned int hook,
@@ -139,6 +156,7 @@ unsigned int nf_iterate(struct list_head *head,
 	 * The caller must not block between calls to this
 	 * function because of risk of continuing from deleted element.
 	 */
+    //call every hook function in hook list
 	list_for_each_entry_continue_rcu((*elemp), head, list) {
 		if (hook_thresh > (*elemp)->priority)
 			continue;
@@ -173,6 +191,7 @@ int nf_hook_slow(u_int8_t pf, unsigned int hook, struct sk_buff *skb,
 		 int (*okfn)(struct sk_buff *),
 		 int hook_thresh)
 {
+    //hook opts include hook fun
 	struct nf_hook_ops *elem;
 	unsigned int verdict;
 	int ret = 0;
@@ -184,27 +203,26 @@ int nf_hook_slow(u_int8_t pf, unsigned int hook, struct sk_buff *skb,
 next_hook:
 	verdict = nf_iterate(&nf_hooks[pf][hook], skb, hook, indev,
 			     outdev, &elem, okfn, hook_thresh);
-	if (verdict == NF_ACCEPT || verdict == NF_STOP) {
-		ret = 1;
-	} else if ((verdict & NF_VERDICT_MASK) == NF_DROP) {
-		kfree_skb(skb);
-		ret = NF_DROP_GETERR(verdict);
-		if (ret == 0)
-			ret = -EPERM;
-	//} else if ((verdict & NF_VERDICT_MASK) == NF_QUEUE) {
-		} else if ((verdict & NF_VERDICT_MASK) == NF_QUEUE ||
-		   (verdict & NF_VERDICT_MASK) == NF_IMQ_QUEUE) {
-		int err = nf_queue(skb, elem, pf, hook, indev, outdev, okfn,
-						//verdict >> NF_VERDICT_QBITS);
-						verdict >> NF_VERDICT_QBITS,
-						verdict & NF_VERDICT_MASK);
-		if (err < 0) {
-			if (err == -ECANCELED)
-				goto next_hook;
-			if (err == -ESRCH &&
-			   (verdict & NF_VERDICT_FLAG_QUEUE_BYPASS))
-				goto next_hook;
-			kfree_skb(skb);
+    if (verdict == NF_ACCEPT || verdict == NF_STOP) {
+        ret = 1;
+    } else if ((verdict & NF_VERDICT_MASK) == NF_DROP) {
+        kfree_skb(skb);
+        ret = NF_DROP_GETERR(verdict);
+        if (ret == 0)
+            ret = -EPERM;
+    } else if ((verdict & NF_VERDICT_MASK) == NF_QUEUE ||
+            (verdict & NF_VERDICT_MASK) == NF_IMQ_QUEUE) {
+        //add to queue
+        int err = nf_queue(skb, elem, pf, hook, indev, outdev, okfn,
+                verdict >> NF_VERDICT_QBITS,
+                verdict & NF_VERDICT_MASK);
+        if (err < 0) {
+            if (err == -ECANCELED)
+                goto next_hook;
+            if (err == -ESRCH &&
+                    (verdict & NF_VERDICT_FLAG_QUEUE_BYPASS))
+                goto next_hook;
+            kfree_skb(skb);
 		}
 	}
 	rcu_read_unlock();

@@ -52,6 +52,7 @@ enum nf_inet_hooks {
 	NF_INET_NUMHOOKS
 };
 
+//specofiy protol 
 enum {
 	NFPROTO_UNSPEC =  0,
 	NFPROTO_IPV4   =  2,

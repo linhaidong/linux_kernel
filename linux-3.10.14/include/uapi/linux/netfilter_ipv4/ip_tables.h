@@ -101,7 +101,10 @@ struct ipt_ip {
 /* This structure defines each of the firewall rules.  Consists of 3
    parts which are 1) general IP header stuff 2) match specific
    stuff 3) the target to perform if the rule matches */
+//m?防火墙规则的匹配函数
 struct ipt_entry {
+    //normal match 
+    //stand ip
 	struct ipt_ip ip;
 
 	/* Mark with fields that we care about. */
@@ -186,6 +189,7 @@ struct ipt_replace {
 	unsigned int num_entries;
 
 	/* Total size of new entries */
+    //ipt_standard and ipt_error length
 	unsigned int size;
 
 	/* Hook entry points. */

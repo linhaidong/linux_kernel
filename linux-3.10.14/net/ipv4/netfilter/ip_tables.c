@@ -68,6 +68,11 @@ EXPORT_SYMBOL_GPL(wan_name);
 #define inline
 #endif
 
+
+
+// init table  for ipv4
+// 
+//初始化 ipt_replace ipt_standard
 void *ipt_alloc_initial_table(const struct xt_table *info)
 {
 	return xt_alloc_initial_table(ipt, IPT);
@@ -87,6 +92,8 @@ ip_packet_match(const struct iphdr *ip,
 
 #define FWINV(bool, invflg) ((bool) ^ !!(ipinfo->invflags & (invflg)))
 
+
+    //m:check address
 	if (FWINV((ip->saddr&ipinfo->smsk.s_addr) != ipinfo->src.s_addr,
 		  IPT_INV_SRCIP) ||
 	    FWINV((ip->daddr&ipinfo->dmsk.s_addr) != ipinfo->dst.s_addr,
@@ -102,6 +109,7 @@ ip_packet_match(const struct iphdr *ip,
 		return false;
 	}
 
+    //m:check dev
 	ret = ifname_compare_aligned(indev, ipinfo->iniface, ipinfo->iniface_mask);
 
 	if (FWINV(ret != 0, IPT_INV_VIA_IN)) {
@@ -140,6 +148,15 @@ ip_packet_match(const struct iphdr *ip,
 	return true;
 }
 
+/* --------------------------------------------------------------------------*/
+/**
+ * @Synopsis  check entry flag
+ *
+ * @Param ip
+ *
+ * @Returns   
+ */
+/* ----------------------------------------------------------------------------*/
 static bool
 ip_checkentry(const struct ipt_ip *ip)
 {
@@ -185,6 +202,7 @@ static inline bool unconditional(const struct ipt_ip *ip)
 static inline const struct xt_entry_target *
 ipt_get_target_c(const struct ipt_entry *e)
 {
+    //one ipt_entry include som target
 	return ipt_get_target((struct ipt_entry *)e);
 }
 
@@ -319,6 +337,7 @@ ipt_do_table(struct sk_buff *skb,
 	 * things we don't know, ie. tcp syn flag or ports).  If the
 	 * rule is also a fragment-specific rule, non-fragments won't
 	 * match it. */
+    //是否是分割的数据包
 	acpar.fragoff = ntohs(ip->frag_off) & IP_OFFSET;
 	acpar.thoff   = ip_hdrlen(skb);
 	acpar.hotdrop = false;
@@ -327,11 +346,15 @@ ipt_do_table(struct sk_buff *skb,
 	acpar.family  = NFPROTO_IPV4;
 	acpar.hooknum = hook;
 
+    //print debug msg
 	IP_NF_ASSERT(table->valid_hooks & (1 << hook));
 	local_bh_disable();
+
 	addend = xt_write_recseq_begin();
 	private = table->private;
+    //get by cpu
 	cpu        = smp_processor_id();
+    //m:where set emtries
 	table_base = private->entries[cpu];
 	jumpstack  = (struct ipt_entry **)private->jumpstack[cpu];
 	stackptr   = per_cpu_ptr(private->stackptr, cpu);
@@ -349,8 +372,10 @@ ipt_do_table(struct sk_buff *skb,
 		const struct xt_entry_match *ematch;
 
 		IP_NF_ASSERT(e);
+        //匹配数据报文中的内容
         //ip_packet_match匹配标准match, 也就是ip报文中的一些基本的元素，\
         //如来源/目的地址，进/出网口，协议等，因为要匹配的内容是固定的，所以具体的函数实现也是固定的
+        //ip 为数据包中的内容， e->ip为匹配的规则
 		if (!ip_packet_match(ip, indev, outdev,
 		    &e->ip, acpar.fragoff)) {
  no_match:
@@ -371,6 +396,7 @@ ipt_do_table(struct sk_buff *skb,
 
 		ADD_COUNTER(e->counters, skb->len, 1);
 
+        //m:get target
 		t = ipt_get_target(e);
 		IP_NF_ASSERT(t->u.kernel.target);
 
@@ -422,6 +448,8 @@ ipt_do_table(struct sk_buff *skb,
 		acpar.target   = t->u.kernel.target;
 		acpar.targinfo = t->data;
 
+
+        //m:call kernel target function
 		verdict = t->u.kernel.target->target(skb, &acpar);
 		/* Target might have changed stuff. */
 		ip = ip_hdr(skb);
@@ -448,6 +476,18 @@ ipt_do_table(struct sk_buff *skb,
 
 /* Figures out from what hook each rule can be called: returns 0 if
    there are loops.  Puts hook bitmask in comefrom. */
+
+/* --------------------------------------------------------------------------*/
+/**
+ * @Synopsis init count status and  comfrom
+ *
+ * @Param newinfo
+ * @Param valid_hooks
+ * @Param entry0
+ *
+ * @Returns   
+ */
+/* ----------------------------------------------------------------------------*/
 static int
 mark_source_chains(const struct xt_table_info *newinfo,
 		   unsigned int valid_hooks, void *entry0)
@@ -457,9 +497,12 @@ mark_source_chains(const struct xt_table_info *newinfo,
 	/* No recursion; use packet counter to save back ptrs (reset
 	   to 0 as we leave), and comefrom to save source hook bitmask */
 	for (hook = 0; hook < NF_INET_NUMHOOKS; hook++) {
+        //mytxt: get pos, story begin
 		unsigned int pos = newinfo->hook_entry[hook];
+        //get ipt_entry
 		struct ipt_entry *e = (struct ipt_entry *)(entry0 + pos);
 
+        //charge hook available
 		if (!(valid_hooks & (1 << hook)))
 			continue;
 
@@ -467,6 +510,9 @@ mark_source_chains(const struct xt_table_info *newinfo,
 		e->counters.pcnt = pos;
 
 		for (;;) {
+            //mytxt: begin + offset
+            //entry get target, see ipt_standard
+            //ipt_standard_target next by ipt_entry
 			const struct xt_standard_target *t
 				= (void *)ipt_get_target_c(e);
 			int visited = e->comefrom & (1 << hook);
@@ -476,6 +522,7 @@ mark_source_chains(const struct xt_table_info *newinfo,
 				       hook, pos, e->comefrom);
 				return 0;
 			}
+            //point to hook point
 			e->comefrom |= ((1 << hook) | (1 << NF_INET_NUMHOOKS));
 
 			/* Unconditional return/END. */
@@ -571,16 +618,29 @@ static void cleanup_match(struct xt_entry_match *m, struct net *net)
 	module_put(par.match->me);
 }
 
+/* --------------------------------------------------------------------------*/
+/**
+ * @Synopsis  
+ *
+ * @Param e
+ * @Param name
+ *
+ * @Returns   
+ */
+/* ----------------------------------------------------------------------------*/
 static int
 check_entry(const struct ipt_entry *e, const char *name)
 {
 	const struct xt_entry_target *t;
 
+    //check entry flag
 	if (!ip_checkentry(&e->ip)) {
 		duprintf("ip check failed %p %s.\n", e, name);
 		return -EINVAL;
 	}
 
+
+    //check offset
 	if (e->target_offset + sizeof(struct xt_entry_target) >
 	    e->next_offset)
 		return -EINVAL;
@@ -601,6 +661,7 @@ check_match(struct xt_entry_match *m, struct xt_mtchk_param *par)
 	par->match     = m->u.kernel.match;
 	par->matchinfo = m->data;
 
+    //m:second param is to stroe match
 	ret = xt_check_match(par, m->u.match_size - sizeof(*m),
 	      ip->proto, ip->invflags & IPT_INV_PROTO);
 	if (ret < 0) {
@@ -610,12 +671,23 @@ check_match(struct xt_entry_match *m, struct xt_mtchk_param *par)
 	return 0;
 }
 
+/* --------------------------------------------------------------------------*/
+/**
+ * @Synopsis  
+ *
+ * @Param m
+ * @Param par
+ *
+ * @Returns   
+ */
+/* ----------------------------------------------------------------------------*/
 static int
 find_check_match(struct xt_entry_match *m, struct xt_mtchk_param *par)
 {
 	struct xt_match *match;
 	int ret;
 
+    //get match by name, every match is regiset in ax list
 	match = xt_request_find_match(NFPROTO_IPV4, m->u.user.name,
 				      m->u.user.revision);
 	if (IS_ERR(match)) {
@@ -630,6 +702,7 @@ find_check_match(struct xt_entry_match *m, struct xt_mtchk_param *par)
 
 	return 0;
 err:
+    //m:dec module call num 
 	module_put(m->u.kernel.match->me);
 	return ret;
 }
@@ -658,6 +731,18 @@ static int check_target(struct ipt_entry *e, struct net *net, const char *name)
 	return 0;
 }
 
+/* --------------------------------------------------------------------------*/
+/**
+ * @Synopsis  
+ *
+ * @Param e
+ * @Param net
+ * @Param name
+ * @Param size
+ *
+ * @Returns   
+ */
+/* ----------------------------------------------------------------------------*/
 static int
 find_check_entry(struct ipt_entry *e, struct net *net, const char *name,
 		 unsigned int size)
@@ -669,6 +754,8 @@ find_check_entry(struct ipt_entry *e, struct net *net, const char *name,
 	struct xt_mtchk_param mtpar;
 	struct xt_entry_match *ematch;
 
+
+    //mytxt: check entry flag and offset is vaillage
 	ret = check_entry(e, name);
 	if (ret)
 		return ret;
@@ -679,6 +766,7 @@ find_check_entry(struct ipt_entry *e, struct net *net, const char *name,
 	mtpar.entryinfo = &e->ip;
 	mtpar.hook_mask = e->comefrom;
 	mtpar.family    = NFPROTO_IPV4;
+    //check match 
 	xt_ematch_foreach(ematch, e) {
 		ret = find_check_match(ematch, &mtpar);
 		if (ret != 0)
@@ -686,6 +774,7 @@ find_check_entry(struct ipt_entry *e, struct net *net, const char *name,
 		++j;
 	}
 
+    //check target
 	t = ipt_get_target(e);
 	target = xt_request_find_target(NFPROTO_IPV4, t->u.user.name,
 					t->u.user.revision);
@@ -726,6 +815,22 @@ static bool check_underflow(const struct ipt_entry *e)
 	return verdict == NF_DROP || verdict == NF_ACCEPT;
 }
 
+
+/* --------------------------------------------------------------------------*/
+/**
+ * @Synopsis  
+ *          设置每一个hook点的entry的偏移地址
+ * @Param e
+ * @Param newinfo
+ * @Param base         存储器空间的起始地址 
+ * @Param limit        存储空间的结束地址
+ * @Param hook_entries
+ * @Param underflows
+ * @Param valid_hooks
+ *
+ * @Returns   
+ */
+/* ----------------------------------------------------------------------------*/
 static int
 check_entry_size_and_hooks(struct ipt_entry *e,
 			   struct xt_table_info *newinfo,
@@ -754,6 +859,7 @@ check_entry_size_and_hooks(struct ipt_entry *e,
 	for (h = 0; h < NF_INET_NUMHOOKS; h++) {
 		if (!(valid_hooks & (1 << h)))
 			continue;
+        //entry is offset
 		if ((unsigned char *)e - base == hook_entries[h])
 			newinfo->hook_entry[h] = hook_entries[h];
 		if ((unsigned char *)e - base == underflows[h]) {
@@ -794,6 +900,18 @@ cleanup_entry(struct ipt_entry *e, struct net *net)
 	module_put(par.target->me);
 }
 
+/* --------------------------------------------------------------------------*/
+/**
+ * @Synopsis  
+ *
+ * @Param net
+ * @Param newinfo
+ * @Param entry0 本地cpu规则的储存地址
+ * @Param repl
+ *
+ * @Returns   
+ */
+/* ----------------------------------------------------------------------------*/
 /* Checks and translates the user-supplied table segment (held in
    newinfo) */
 static int
@@ -804,10 +922,14 @@ translate_table(struct net *net, struct xt_table_info *newinfo, void *entry0,
 	unsigned int i;
 	int ret = 0;
 
+
+    //size 为存储iptables规则的存储空间的大小
 	newinfo->size = repl->size;
+    //num 为hook点的规则的个数
 	newinfo->number = repl->num_entries;
 
 	/* Init all hooks to impossible value. */
+    //init hook entry offset
 	for (i = 0; i < NF_INET_NUMHOOKS; i++) {
 		newinfo->hook_entry[i] = 0xFFFFFFFF;
 		newinfo->underflow[i] = 0xFFFFFFFF;
@@ -816,7 +938,10 @@ translate_table(struct net *net, struct xt_table_info *newinfo, void *entry0,
 	duprintf("translate_table: size %u\n", newinfo->size);
 	i = 0;
 	/* Walk through entries, checking offsets. */
+    //why repl
+    //iter: return param   entery: story head
 	xt_entry_foreach(iter, entry0, newinfo->size) {
+        //mytxt:set new_info entry offset and clean entry's status'
 		ret = check_entry_size_and_hooks(iter, newinfo, entry0,
 						 entry0 + repl->size,
 						 repl->hook_entry,
@@ -853,6 +978,9 @@ translate_table(struct net *net, struct xt_table_info *newinfo, void *entry0,
 		}
 	}
 
+
+    //chain store in ipt_entry and ipt_stand_target
+    //init every ipt_standard by hook point 
 	if (!mark_source_chains(newinfo, repl->valid_hooks, entry0))
 		return -ELOOP;
 
@@ -875,6 +1003,7 @@ translate_table(struct net *net, struct xt_table_info *newinfo, void *entry0,
 	}
 
 	/* And one copy for every other CPU */
+    //every cpu entry is same
 	for_each_possible_cpu(i) {
 		if (newinfo->entries[i] && newinfo->entries[i] != entry0)
 			memcpy(newinfo->entries[i], entry0, newinfo->size);
@@ -1687,6 +1816,7 @@ translate_compat_table(struct net *net,
 	xt_compat_init_offsets(AF_INET, number);
 	/* Walk through entries, checking offsets. */
 	xt_entry_foreach(iter0, entry0, total_size) {
+        //
 		ret = check_compat_entry_size_and_hooks(iter0, info, &size,
 							entry0,
 							entry0 + total_size,
@@ -2078,6 +2208,19 @@ do_ipt_get_ctl(struct sock *sk, int cmd, void __user *user, int *len)
 	return ret;
 }
 
+/* --------------------------------------------------------------------------*/
+/**
+ * @Synopsis  ipvt 注册table，每一个功能filter，nat，manager都是一个xt_table
+ *             xt_table包含一个table_new_info里面有一个entry数组，每一个cpu一个entry。
+ *             entry中包含匹配规则ipt_standard
+ *
+ * @Param net
+ * @Param table
+ * @Param repl
+ *
+ * @Returns   
+ */
+/* ----------------------------------------------------------------------------*/
 struct xt_table *ipt_register_table(struct net *net,
 				    const struct xt_table *table,
 				    const struct ipt_replace *repl)
@@ -2088,6 +2231,8 @@ struct xt_table *ipt_register_table(struct net *net,
 	void *loc_cpu_entry;
 	struct xt_table *new_table;
 
+    //repl->size 是hook点的个数*ipt_standard+一个ipt_error
+    //alloc new_info
 	newinfo = xt_alloc_table_info(repl->size);
 	if (!newinfo) {
 		ret = -ENOMEM;
@@ -2095,7 +2240,9 @@ struct xt_table *ipt_register_table(struct net *net,
 	}
 
 	/* choose the copy on our node/cpu, but dont care about preemption */
+    //指向具体的cpu
 	loc_cpu_entry = newinfo->entries[raw_smp_processor_id()];
+    //repl 的entries 后面的一个数据结构是ipt_standard
 	memcpy(loc_cpu_entry, repl->entries, repl->size);
 
 	ret = translate_table(net, newinfo, loc_cpu_entry, repl);

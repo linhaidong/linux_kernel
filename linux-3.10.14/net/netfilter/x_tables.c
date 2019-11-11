@@ -189,6 +189,18 @@ EXPORT_SYMBOL(xt_unregister_matches);
  */
 
 /* Find match, grabs ref.  Returns ERR_PTR() on error. */
+
+/* --------------------------------------------------------------------------*/
+/**
+ * @Synopsis  get match module by name
+ *            every match is register in xt list
+ * @Param af
+ * @Param name
+ * @Param revision
+ *
+ * @Returns   
+ */
+/* ----------------------------------------------------------------------------*/
 struct xt_match *xt_find_match(u8 af, const char *name, u8 revision)
 {
 	struct xt_match *m;
@@ -197,6 +209,8 @@ struct xt_match *xt_find_match(u8 af, const char *name, u8 revision)
 	if (mutex_lock_interruptible(&xt[af].mutex) != 0)
 		return ERR_PTR(-EINTR);
 
+
+    //mytxt:get match by name
 	list_for_each_entry(m, &xt[af].match, list) {
 		if (strcmp(m->name, name) == 0) {
 			if (m->revision == revision) {
@@ -218,6 +232,17 @@ struct xt_match *xt_find_match(u8 af, const char *name, u8 revision)
 }
 EXPORT_SYMBOL(xt_find_match);
 
+/* --------------------------------------------------------------------------*/
+/**
+ * @Synopsis  find match
+ *
+ * @Param nfproto
+ * @Param name
+ * @Param revision
+ *
+ * @Returns   
+ */
+/* ----------------------------------------------------------------------------*/
 struct xt_match *
 xt_request_find_match(uint8_t nfproto, const char *name, uint8_t revision)
 {
@@ -380,11 +405,24 @@ textify_hooks(char *buf, size_t size, unsigned int mask, uint8_t nfproto)
 	return buf;
 }
 
+/* --------------------------------------------------------------------------*/
+/**
+ * @Synopsis  
+ *
+ * @Param par
+ * @Param size
+ * @Param proto
+ * @Param inv_proto
+ *
+ * @Returns   
+ */
+/* ----------------------------------------------------------------------------*/
 int xt_check_match(struct xt_mtchk_param *par,
 		   unsigned int size, u_int8_t proto, bool inv_proto)
 {
 	int ret;
 
+    //m:check size
 	if (XT_ALIGN(par->match->matchsize) != size &&
 	    par->match->matchsize != -1) {
 		/*
@@ -398,6 +436,7 @@ int xt_check_match(struct xt_mtchk_param *par,
 		       XT_ALIGN(par->match->matchsize), size);
 		return -EINVAL;
 	}
+    //m:check name
 	if (par->match->table != NULL &&
 	    strcmp(par->match->table, par->table) != 0) {
 		pr_err("%s_tables: %s match: only valid in %s table, not %s\n",
@@ -417,12 +456,14 @@ int xt_check_match(struct xt_mtchk_param *par,
 		                     par->family));
 		return -EINVAL;
 	}
+    //m:check proto
 	if (par->match->proto && (par->match->proto != proto || inv_proto)) {
 		pr_err("%s_tables: %s match: only valid for protocol %u\n",
 		       xt_prefix[par->family], par->match->name,
 		       par->match->proto);
 		return -EINVAL;
 	}
+    //m: call check entry function
 	if (par->match->checkentry != NULL) {
 		ret = par->match->checkentry(par);
 		if (ret < 0)
@@ -560,6 +601,20 @@ int xt_compat_match_to_user(const struct xt_entry_match *m,
 EXPORT_SYMBOL_GPL(xt_compat_match_to_user);
 #endif /* CONFIG_COMPAT */
 
+
+
+/* --------------------------------------------------------------------------*/
+/**
+ * @Synopsis  
+ *
+ * @Param par
+ * @Param size
+ * @Param proto
+ * @Param inv_proto
+ *
+ * @Returns   
+ */
+/* ----------------------------------------------------------------------------*/
 int xt_check_target(struct xt_tgchk_param *par,
 		    unsigned int size, u_int8_t proto, bool inv_proto)
 {
@@ -673,6 +728,17 @@ int xt_compat_target_to_user(const struct xt_entry_target *t,
 EXPORT_SYMBOL_GPL(xt_compat_target_to_user);
 #endif
 
+//newinfo 的size为所有保存规则的长度
+//newinfo的entry为每一个cpu保存一个规则记录
+//每个规则记录为ipt_standard 和ipt_error
+//
+//
+//每一个功能点建立一个table，filter建立filter_table,nat功能建立nat_table
+//每个table包含多个hook点，每个hook点在tableentry中用一个ipt_standard结构表示
+//xt_table 中用xt_table_info存储规则
+//
+//
+//size 为hook num*ipt_standard + sizeof(ipt_error)
 struct xt_table_info *xt_alloc_table_info(unsigned int size)
 {
 	struct xt_table_info *newinfo;
@@ -688,6 +754,10 @@ struct xt_table_info *xt_alloc_table_info(unsigned int size)
 
 	newinfo->size = size;
 
+
+    //为每一个cpu记录一个结构
+    //cpu之间共享?多个cpu互动
+    //newinfo entry针对的是cpu
 	for_each_possible_cpu(cpu) {
 		if (size <= PAGE_SIZE)
 			newinfo->entries[cpu] = kmalloc_node(size,
@@ -816,7 +886,7 @@ static int xt_jumpstack_alloc(struct xt_table_info *i)
 
 	return 0;
 }
-
+//set xt_table private
 struct xt_table_info *
 xt_replace_table(struct xt_table *table,
 	      unsigned int num_counters,
@@ -833,6 +903,7 @@ xt_replace_table(struct xt_table *table,
 	}
 
 	/* Do the substitution. */
+    //禁止软中断
 	local_bh_disable();
 	private = table->private;
 
@@ -875,6 +946,19 @@ xt_replace_table(struct xt_table *table,
 }
 EXPORT_SYMBOL_GPL(xt_replace_table);
 
+
+/* --------------------------------------------------------------------------*/
+/**
+ * @Synopsis  
+ *
+ * @Param net   指向具体的命名空间
+ * @Param input_table
+ * @Param bootstrap
+ * @Param newinfo
+ *
+ * @Returns   
+ */
+/* ----------------------------------------------------------------------------*/
 struct xt_table *xt_register_table(struct net *net,
 				   const struct xt_table *input_table,
 				   struct xt_table_info *bootstrap,
@@ -896,6 +980,8 @@ struct xt_table *xt_register_table(struct net *net,
 		goto out_free;
 
 	/* Don't autoload: we'd eat our tail... */
+    // charge name is in list
+    // table中name为唯一的标示
 	list_for_each_entry(t, &net->xt.tables[table->af], list) {
 		if (strcmp(t->name, table->name) == 0) {
 			ret = -EEXIST;
@@ -906,6 +992,7 @@ struct xt_table *xt_register_table(struct net *net,
 	/* Simplifies replace_table code. */
 	table->private = bootstrap;
 
+    //设置table的private为new_info
 	if (!xt_replace_table(table, 0, newinfo, &ret))
 		goto unlock;
 
@@ -913,8 +1000,10 @@ struct xt_table *xt_register_table(struct net *net,
 	pr_debug("table->private->number = %u\n", private->number);
 
 	/* save number of initial entries */
+    //设置初始化的entry的num
 	private->initial_entries = private->number;
 
+    //my:add table to namespace xt tables array by protol
 	list_add(&table->list, &net->xt.tables[table->af]);
 	mutex_unlock(&xt[table->af].mutex);
 	return table;

@@ -50,7 +50,6 @@ typedef unsigned int nf_hookfn(unsigned int hooknum,
 
 struct nf_hook_ops {
 	struct list_head list;
-
 	/* User fills in from here down. */
 	nf_hookfn *hook;
 	struct module *owner;
@@ -100,6 +99,18 @@ extern struct list_head nf_hooks[NFPROTO_NUMPROTO][NF_MAX_HOOKS];
 #if defined(CONFIG_JUMP_LABEL)
 #include <linux/static_key.h>
 extern struct static_key nf_hooks_needed[NFPROTO_NUMPROTO][NF_MAX_HOOKS];
+//m: charge hook  is registered by proto
+
+/* --------------------------------------------------------------------------*/
+/**
+ * @Synopsis  every hook point is in nf_hooks array  list
+ *
+ * @Param pf
+ * @Param hook
+ *
+ * @Returns   
+ */
+/* ----------------------------------------------------------------------------*/
 static inline bool nf_hooks_active(u_int8_t pf, unsigned int hook)
 {
 	if (__builtin_constant_p(pf) &&

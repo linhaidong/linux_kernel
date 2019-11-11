@@ -24,11 +24,18 @@ MODULE_ALIAS("ip6t_mark");
 MODULE_ALIAS("ipt_MARK");
 MODULE_ALIAS("ip6t_MARK");
 
+
+//对skb打标签
+//set mask
 static unsigned int
 mark_tg(struct sk_buff *skb, const struct xt_action_param *par)
 {
 	const struct xt_mark_tginfo2 *info = par->targinfo;
 
+    //1. 标示位取反后，and operation, 设置的位置全部指控为0
+    //2. 抑或操作后，所有的位置都为1，设置的标示位都为1
+    //
+    //
 	skb->mark = (skb->mark & ~info->mask) ^ info->mark;
 	return XT_CONTINUE;
 }

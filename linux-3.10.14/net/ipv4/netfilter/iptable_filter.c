@@ -32,6 +32,8 @@ static const struct xt_table packet_filter = {
 	.priority	= NF_IP_PRI_FILTER,
 };
 
+
+//hook function for filter table
 static unsigned int
 iptable_filter_hook(unsigned int hook, struct sk_buff *skb,
 		    const struct net_device *in, const struct net_device *out,
@@ -55,10 +57,13 @@ static struct nf_hook_ops *filter_ops __read_mostly;
 static bool forward = true;
 module_param(forward, bool, 0000);
 
+//init and regiest tables
 static int __net_init iptable_filter_net_init(struct net *net)
 {
 	struct ipt_replace *repl;
 
+
+    //m:alloc table
 	repl = ipt_alloc_initial_table(&packet_filter);
 	if (repl == NULL)
 		return -ENOMEM;
@@ -66,6 +71,11 @@ static int __net_init iptable_filter_net_init(struct net *net)
 	((struct ipt_standard *)repl->entries)[1].target.verdict =
 		forward ? -NF_ACCEPT - 1 : -NF_DROP - 1;
 
+
+    //register table for net namespace xt_table tbl
+    //xt_table 
+    //repl: tbl for ipt-standard
+    //set net namespace ipv4 filter table
 	net->ipv4.iptable_filter =
 		ipt_register_table(net, &packet_filter, repl);
 	kfree(repl);
@@ -88,11 +98,14 @@ static int __init iptable_filter_init(void)
 
     /*register_pernet_subsys向内核所有的网络命名空间注册子系统的初始化和去初始化函数*/
 	/*即将一个网络协议模块添加到每一个网络命令空间中*/
+    //this function will call init function
     ret = register_pernet_subsys(&iptable_filter_net_ops);
 	if (ret < 0)
 		return ret;
 
 	/* Register hooks */
+    //second function is hook function
+    // add hook function to hook point
 	filter_ops = xt_hook_link(&packet_filter, iptable_filter_hook);
 	if (IS_ERR(filter_ops)) {
 		ret = PTR_ERR(filter_ops);

@@ -40,12 +40,15 @@ struct ipt_error {
 	struct xt_error_target target;
 };
 
+//entry init offset and next offset
 #define IPT_ENTRY_INIT(__size)						       \
 {									       \
 	.target_offset	= sizeof(struct ipt_entry),			       \
 	.next_offset	= (__size),					       \
 }
 
+//init entry offset 
+//init user target name and size
 #define IPT_STANDARD_INIT(__verdict)					       \
 {									       \
 	.entry		= IPT_ENTRY_INIT(sizeof(struct ipt_standard)),	       \
